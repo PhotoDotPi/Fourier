@@ -479,23 +479,26 @@ describe('OPS-10 yt-dlp selection and update lifecycle', () => {
     expect(getExecutable()).toBe(path.join(process.cwd(), 'bin', 'yt-dlp'));
   });
 
-  it.skipIf(process.platform === 'win32')('repairs a bundled yt-dlp that lacks the executable bit so it can be spawned', async () => {
-    const layout = await makeExecutableLayout(false);
-    await fs.chmod(layout.executable, 0o644);
-    process.env.YT_DLP_PATH = layout.executable;
-    process.env.PATH = '/path/that/would/otherwise/be/searched';
+  it.skipIf(process.platform === 'win32')(
+    'repairs a bundled yt-dlp that lacks the executable bit so it can be spawned',
+    async () => {
+      const layout = await makeExecutableLayout(false);
+      await fs.chmod(layout.executable, 0o644);
+      process.env.YT_DLP_PATH = layout.executable;
+      process.env.PATH = '/path/that/would/otherwise/be/searched';
 
-    const resolved = await ensureExecutable();
-    expect(resolved).toBe(await fs.realpath(layout.executable));
-    const { mode } = await fs.stat(layout.executable);
-    expect(mode & 0o100).toBe(0o100);
+      const resolved = await ensureExecutable();
+      expect(resolved).toBe(await fs.realpath(layout.executable));
+      const { mode } = await fs.stat(layout.executable);
+      expect(mode & 0o100).toBe(0o100);
 
-    dependencyMocks.spawn.mockReturnValue({
-      success: true,
-      stdout: new TextEncoder().encode('2026.07.12\n'),
-    });
-    await expect(getYtDlpVersion()).resolves.toBe('2026.07.12');
-  });
+      dependencyMocks.spawn.mockReturnValue({
+        success: true,
+        stdout: new TextEncoder().encode('2026.07.12\n'),
+      });
+      await expect(getYtDlpVersion()).resolves.toBe('2026.07.12');
+    },
+  );
 
   it('prefers pip through the executable sibling virtualenv and re-probes the updated version', async () => {
     const layout = await makeExecutableLayout();
