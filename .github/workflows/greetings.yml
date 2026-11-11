@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/first-interaction@1c4688942c71f71d4f5502a26ea67c331730fa4d # v3.1.0
         with:
-          issue-message: |
+          issue_message: |
             Thanks for opening your first issue in Fourier! 🎛️
 
             A few things that make reports much easier to act on:
@@ -30,7 +30,7 @@ jobs:
             - and the exact steps that reproduce the problem.
 
             The README's troubleshooting section covers the most common setup problems in the meantime.
-          pr-message: |
+          pr_message: |
             Thanks for your first pull request to Fourier! 🚀
 
             CI runs lint, type-check, and the test suite. Before it is reviewed, please make sure:
