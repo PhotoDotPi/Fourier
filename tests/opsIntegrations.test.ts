@@ -479,7 +479,7 @@ describe('OPS-10 yt-dlp selection and update lifecycle', () => {
     expect(getExecutable()).toBe(path.join(process.cwd(), 'bin', 'yt-dlp'));
   });
 
-  it('repairs a bundled yt-dlp that lacks the executable bit so it can be spawned', async () => {
+  it.skipIf(process.platform === 'win32')('repairs a bundled yt-dlp that lacks the executable bit so it can be spawned', async () => {
     const layout = await makeExecutableLayout(false);
     await fs.chmod(layout.executable, 0o644);
     process.env.YT_DLP_PATH = layout.executable;
