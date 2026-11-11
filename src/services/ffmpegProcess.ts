@@ -486,6 +486,10 @@ export function createReadStream(options: CreateReadStreamOptions): Promise<Read
       }
 
       hasReturnedStreamClosed = true;
+
+      if (!capacitor.destroyed) {
+        capacitor.release();
+      }
     });
 
     proc.on('error', (error) => {

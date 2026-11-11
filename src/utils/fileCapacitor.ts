@@ -94,9 +94,9 @@ export class ReadStream extends Readable {
 export class WriteStream extends Writable {
   fd: number | null = null;
   private readonly path: string;
-  private _position = 0;
   readonly readStreams = new Set<ReadStream>();
   private readonly cleanupSync: () => void;
+  private released = false;
 
   position = 0;
 
@@ -137,10 +137,6 @@ export class WriteStream extends Writable {
     process.once('exit', this.cleanupSync);
   }
 
-  get positionValue(): number {
-    return this._position;
-  }
-
   _write(chunk: Buffer | string, encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
     if (this.fd === null) {
       callback(new Error('File capacitor is not ready'));
@@ -148,16 +144,31 @@ export class WriteStream extends Writable {
     }
 
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding);
-    write(this.fd, buffer, 0, buffer.length, this.position, (error) => {
-      if (error) {
-        callback(error);
+
+    const writeFully = (offset: number, filePosition: number): void => {
+      if (offset >= buffer.length) {
+        this.position += buffer.length;
+        this.emit('write');
+        callback();
         return;
       }
 
-      this.position += buffer.length;
-      this.emit('write');
-      callback();
-    });
+      write(this.fd as number, buffer, offset, buffer.length - offset, filePosition, (error, bytesWritten) => {
+        if (error) {
+          callback(error);
+          return;
+        }
+
+        if (!bytesWritten) {
+          callback(new Error('File capacitor write returned 0 bytes'));
+          return;
+        }
+
+        writeFully(offset + bytesWritten, filePosition + bytesWritten);
+      });
+    };
+
+    writeFully(0, this.position);
   }
 
   _final(callback: (error?: Error | null) => void): void {
@@ -194,13 +205,31 @@ export class WriteStream extends Writable {
       throw new ReadAfterDestroyedError('A ReadStream cannot be created from a destroyed WriteStream.');
     }
 
+    if (this.released) {
+      throw new ReadAfterReleasedError('A ReadStream cannot be created from a released WriteStream.');
+    }
+
     const readStream = new ReadStream(this, options);
     this.readStreams.add(readStream);
     readStream.once('close', () => {
       this.readStreams.delete(readStream);
+      if (this.released && this.readStreams.size === 0 && !this.destroyed) {
+        this.destroy();
+      }
     });
 
     return readStream;
+  }
+
+  release(): void {
+    if (this.released || this.destroyed) {
+      return;
+    }
+
+    this.released = true;
+    if (this.readStreams.size === 0) {
+      this.destroy();
+    }
   }
 }
 
