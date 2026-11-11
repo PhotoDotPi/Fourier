@@ -36,27 +36,27 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@discordjs/builders": "1.14.1",
+    "@discordjs/builders": "1.15.0",
     "@discordjs/rest": "2.6.3",
     "@discordjs/voice": "0.19.2",
     "debug": "^4.4.3",
-    "discord-api-types": "0.38.55",
-    "discord.js": "14.27.0",
+    "discord-api-types": "0.38.57",
+    "discord.js": "14.28.1",
     "fs-capacitor": "^8.0.0",
     "get-youtube-id": "^1.0.1",
-    "iso8601-duration": "^2.1.4",
+    "iso8601-duration": "^2.2.0",
     "musicard": "^3.0.1",
     "opusscript": "^0.1.1",
     "p-queue": "9.3.3",
     "pagination.djs": "^4.0.18",
-    "parse-duration": "^2.1.8",
+    "parse-duration": "^2.1.11",
     "prism-media": "^1.3.5",
     "sponsorblock-api": "^0.2.4",
     "spotify-uri": "^4.1.0",
     "spotify-web-api-node": "^5.0.2"
   },
   "optionalDependencies": {
-    "@discordjs/opus": "^0.10.0"
+    "@discordjs/opus": "^0.11.0"
   },
   "packageManager": "bun@1.4.0"
 }
