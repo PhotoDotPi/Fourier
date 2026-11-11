@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
-import { WriteStream } from 'fs-capacitor';
 import prismMedia from 'prism-media';
+import { WriteStream } from '../utils/fileCapacitor.js';
 import type FileCacheProvider from './fileCache.js';
 
 const FFMPEG_EXECUTABLE = 'ffmpeg';

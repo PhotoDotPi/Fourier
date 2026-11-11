@@ -42,7 +42,6 @@
     "debug": "^4.4.3",
     "discord-api-types": "0.38.58",
     "discord.js": "14.28.1",
-    "fs-capacitor": "^8.0.0",
     "iso8601-duration": "^2.2.0",
     "musicard": "^3.0.1",
     "p-queue": "10.0.0",
