@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation and setup guide
+    url: https://github.com/PhotoDotPi/Fourier/blob/main/README.md
+    about: Requirements, credentials, configuration, commands, and troubleshooting.
+  - name: Questions and general help
+    url: https://github.com/PhotoDotPi/Fourier/discussions
+    about: Ask questions, share setups, and show off your bot in Discussions.
+  - name: Report a security vulnerability
+    url: https://github.com/PhotoDotPi/Fourier/security/advisories/new
+    about: Report vulnerabilities privately. Please do not open a public issue.

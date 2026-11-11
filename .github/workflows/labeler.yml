@@ -1,0 +1,21 @@
+name: Labeler
+
+# `pull_request_target` is required so the token can label pull requests from forks.
+# This workflow never checks out or executes pull request code. See .github/zizmor.yml.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  label:
+    name: Label pull request by path
+    if: github.repository == 'PhotoDotPi/Fourier'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # read .github/labeler.yml
+      pull-requests: write # apply labels to the pull request
+      issues: write # create labels that do not exist in the repository yet
+    steps:
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0

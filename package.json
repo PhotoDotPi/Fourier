@@ -1,0 +1,62 @@
+{
+  "name": "fourier",
+  "version": "1.0.0",
+  "description": "a self-hosted Discord music bot that doesn't suck ",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PhotoDotPi/Fourier.git"
+  },
+  "author": "PhotoDotPi",
+  "license": "AGPL-3.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "lint": "biome check src tests",
+    "lint:fix": "biome check --write src tests",
+    "format": "biome format --write src tests",
+    "format:check": "biome format src tests",
+    "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
+    "test": "bun test --isolate",
+    "test:watch": "bun test --isolate --watch",
+    "build": "tsc",
+    "start": "bun src/scripts/migrateAndStart.ts",
+    "cache:clear-key-value": "bun src/scripts/cacheClearKeyValue.ts",
+    "dev": "bun --watch src/scripts/start.ts",
+    "migrations:run": "bun src/scripts/runMigrations.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@types/bun": "^1.4.0",
+    "@types/debug": "^4.1.13",
+    "@types/spotify-web-api-node": "^5.0.11",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@discordjs/builders": "1.14.1",
+    "@discordjs/rest": "2.6.3",
+    "@discordjs/voice": "0.19.2",
+    "debug": "^4.4.3",
+    "discord-api-types": "0.38.55",
+    "discord.js": "14.27.0",
+    "fs-capacitor": "^8.0.0",
+    "get-youtube-id": "^1.0.1",
+    "iso8601-duration": "^2.1.4",
+    "musicard": "^3.0.1",
+    "opusscript": "^0.1.1",
+    "p-queue": "9.3.3",
+    "pagination.djs": "^4.0.18",
+    "parse-duration": "^2.1.8",
+    "prism-media": "^1.3.5",
+    "sponsorblock-api": "^0.2.4",
+    "spotify-uri": "^4.1.0",
+    "spotify-web-api-node": "^5.0.2"
+  },
+  "optionalDependencies": {
+    "@discordjs/opus": "^0.10.0"
+  },
+  "packageManager": "bun@1.4.0"
+}

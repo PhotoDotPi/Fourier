@@ -1,0 +1,47 @@
+CREATE TABLE IF NOT EXISTS "FileCache" (
+  "hash" TEXT PRIMARY KEY,
+  "bytes" INTEGER NOT NULL,
+  "accessedAt" TIMESTAMP NOT NULL,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "KeyValueCache" (
+  "key" TEXT PRIMARY KEY,
+  "value" TEXT NOT NULL,
+  "expiresAt" TIMESTAMP NOT NULL,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "Setting" (
+  "guildId" TEXT PRIMARY KEY,
+  "playlistLimit" INTEGER NOT NULL DEFAULT 50,
+  "secondsToWaitAfterQueueEmpties" INTEGER NOT NULL DEFAULT 30,
+  "leaveIfNoListeners" BOOLEAN NOT NULL DEFAULT TRUE,
+  "queueAddResponseEphemeral" BOOLEAN NOT NULL DEFAULT FALSE,
+  "autoAnnounceNextSong" BOOLEAN NOT NULL DEFAULT FALSE,
+  "defaultVolume" INTEGER NOT NULL DEFAULT 100,
+  "defaultQueuePageSize" INTEGER NOT NULL DEFAULT 10,
+  "turnDownVolumeWhenPeopleSpeak" BOOLEAN NOT NULL DEFAULT FALSE,
+  "turnDownVolumeWhenPeopleSpeakTarget" INTEGER NOT NULL DEFAULT 20,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "FavoriteQuery" (
+  "id" SERIAL PRIMARY KEY,
+  "guildId" TEXT NOT NULL,
+  "authorId" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "query" TEXT NOT NULL,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE ("guildId", "name")
+);
+
+CREATE TABLE IF NOT EXISTS "_migrations" (
+  "id" SERIAL PRIMARY KEY,
+  "name" TEXT NOT NULL UNIQUE,
+  "applied_at" TIMESTAMP NOT NULL DEFAULT NOW()
+);

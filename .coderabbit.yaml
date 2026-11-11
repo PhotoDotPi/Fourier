@@ -1,0 +1,209 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit configuration for Fourier.
+# Docs: https://docs.coderabbit.ai/reference/configuration
+language: 'en-US'
+early_access: false
+enable_free_tier: true
+
+reviews:
+  # "chill" keeps feedback balanced; "quiet" is only for the loudest issues.
+  profile: 'chill'
+  # Fourier is maintained by a single maintainer, so comments only — no blocking reviews.
+  request_changes_workflow: false
+
+  # --- Walkthrough / summary ---
+  high_level_summary: true
+  high_level_summary_placeholder: '@coderabbitai summary'
+  high_level_summary_in_walkthrough: false
+  auto_title_placeholder: '@coderabbitai'
+  review_status: true
+  review_details: false
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: true
+  auto_apply_labels: false
+  suggested_reviewers: false
+  auto_assign_reviewers: false
+  in_progress_fortune: true
+  poem: false
+  enable_prompt_for_ai_agents: true
+  abort_on_close: true
+  disable_cache: false
+
+  auto_review:
+    enabled: true
+    # Re-review on every push, but stop after a handful of rounds to avoid churn.
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 5
+    drafts: false
+    base_branches:
+      - '^main$'
+
+  # Only review source, docs, CI, and migrations. Binaries, media, and the lockfile are noise.
+  path_filters:
+    - '!dist/**'
+    - '!dts/**'
+    - '!data/**'
+    - '!bin/**'
+    - '!bun.lock'
+
+  path_instructions:
+    - path: 'src/**'
+      instructions: |
+        Fourier is a self-hosted Discord music bot written in TypeScript and run on Bun.
+        - Everything is wired by hand in `src/compose.ts` using explicit constructor injection.
+          There is no DI container; flag code that reaches for module-level singletons instead.
+        - Prefer the existing `debug` namespaces and `src/utils/logError.ts` over `console.log`.
+        - Commands and event handlers must not throw into the interaction/voice event loop; failures
+          should be caught and reported to the user where possible.
+        - Fourier never reads message content and asks for the minimum voice permissions. Flag any
+          change that broadens intents, permissions, or collects more data than necessary.
+        - Flag unbounded queues, unbounded caches, or work that can leak across guilds. Per-guild
+          state must stay isolated.
+        - New runtime dependencies need a clear justification; prefer the standard library and what
+          is already installed.
+
+    - path: 'src/db/**'
+      instructions: |
+        The database is PostgreSQL accessed through `bun:sql` with no ORM.
+        - Schema changes belong in `migrations/pg/*.sql`, not in application code.
+        - Repositories in `src/db/repositories/` are the only place that runs SQL. Flag raw queries
+          added elsewhere.
+        - Flag string-interpolated SQL. Values must be bound parameters.
+        - Queries run per-guild, so flag anything that can read or write another guild's rows.
+
+    - path: 'migrations/pg/**'
+      instructions: |
+        Migrations are applied automatically at startup and are append-only; never edit a migration
+        that has already shipped. New migrations must be additive and safe to run against a live
+        database (avoid long blocking locks, table rewrites, and destructive changes without a
+        backfill). Each migration should be idempotent where practical.
+
+    - path: 'src/commands/**'
+      instructions: |
+        Each command implements the `Command` interface and is registered in `src/commands/index.ts`.
+        - Verify the command validates its options and handles the "no voice channel", "no player",
+          and "missing permissions" cases before doing work.
+        - Replies must respect the per-guild "hidden response" setting where applicable.
+        - Flag commands that can leave the player or queue in an inconsistent state on early return.
+
+    - path: 'src/services/**'
+      instructions: |
+        Services own playback, provider resolution, caching, and the player panel. This code is
+        concurrency-sensitive:
+        - Watch for unhandled promise rejections and for races between playback start, voice
+          connection recovery, and track advancement.
+        - A failed track must be skipped, never left to wedge the player.
+        - Cache reads/writes must stay bounded by `CACHE_LIMIT` and safe under concurrent downloads.
+
+    - path: 'src/managers/**'
+      instructions: |
+        `PlayerManager` owns one `Player` per guild. Flag any path that can leak a player, double
+        subscribe to an event, or share mutable state between guilds.
+
+    - path: 'tests/**'
+      instructions: |
+        Tests use `bun:test` and run with `bun test --isolate` (required because of `mock.module()`).
+        - Tests must be hermetic: no live Postgres, no network, no real ffmpeg/yt-dlp.
+        - Prefer behavioral assertions over implementation details.
+        - New behaviour should come with a test; bug fixes should come with a regression test.
+
+    - path: '.github/workflows/**'
+      instructions: |
+        - Use least-privilege `permissions:` blocks; never grant `write-all`.
+        - Pin actions to a major version tag (for example `actions/checkout@v6`).
+        - Avoid `pull_request_target` unless the workflow never checks out or runs untrusted code.
+
+    - path: '**/*.md'
+      instructions: |
+        Documentation must match the shipped behaviour. Verify that commands, environment variables,
+        defaults, and version numbers in the docs match `src/` and `package.json`.
+
+  tools:
+    biome:
+      enabled: true
+    markdownlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    actionlint:
+      enabled: true
+    zizmor:
+      enabled: true
+    gitleaks:
+      enabled: true
+    trufflehog:
+      enabled: true
+    # Lints the Postgres migrations for unsafe schema changes.
+    squawk:
+      enabled: true
+    ast-grep:
+      enabled: true
+    # Biome already covers JS/TS style and linting; these would only add noise.
+    eslint:
+      enabled: false
+    oxc:
+      enabled: false
+    # No Dockerfiles or Terraform in this repository.
+    hadolint:
+      enabled: false
+    tflint:
+      enabled: false
+
+  pre_merge_checks:
+    title:
+      mode: 'warning'
+      requirements: 'Use an imperative, sentence-case title under 72 characters, e.g. "Skip unplayable tracks instead of stalling the player".'
+    description:
+      mode: 'warning'
+    issue_assessment:
+      mode: 'warning'
+    custom_checks:
+      - name: 'Conventional PR title'
+        mode: 'warning'
+        instructions: |
+          Pull request titles must follow Conventional Commits, because release-please derives the
+          next version and the changelog from the squash-merge title. The title must match
+          `type(scope): subject` using one of: feat, fix, perf, refactor, docs, test, build, ci,
+          chore, deps, revert. Use `!` after the type or scope for breaking changes
+          (for example `feat(player)!: drop the legacy queue format`). The subject starts with a
+          lowercase letter. Contributors must not edit CHANGELOG.md or the version in package.json
+          by hand — release-please owns both.
+
+chat:
+  auto_reply: true
+  art: true
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - 'CONTRIBUTING.md'
+  learnings:
+    scope: 'local'
+  issues:
+    scope: 'local'
+  pull_requests:
+    scope: 'local'
+  web_search:
+    enabled: true
+
+issue_enrichment:
+  auto_enrich:
+    enabled: true
+  labeling:
+    labeling_instructions:
+      - label: 'bug'
+        instructions: 'Apply when the issue reports broken behaviour.'
+      - label: 'enhancement'
+        instructions: 'Apply when the issue requests a new feature or improvement.'
+      - label: 'documentation'
+        instructions: 'Apply when the issue is about docs, README, or setup instructions.'

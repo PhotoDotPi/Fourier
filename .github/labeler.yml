@@ -1,0 +1,48 @@
+# Labels applied to pull requests based on the paths they change.
+# Docs: https://github.com/actions/labeler
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'package.json'
+          - 'bun.lock'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/**'
+          - '.github/scripts/**'
+          - '.github/dependabot.yml'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
+          - 'LICENSE'
+          - 'LICENSE-MIT'
+          - 'NOTICE'
+
+database:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'migrations/**'
+          - 'src/db/**'
+
+commands:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/commands/**'
+
+playback:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/services/player*.ts'
+          - 'src/services/ffmpegProcess.ts'
+          - 'src/services/playbackAttempt.ts'
+          - 'src/services/voiceConnectionRecovery.ts'
+          - 'src/managers/**'
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'tests/**'

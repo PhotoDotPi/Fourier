@@ -1,0 +1,113 @@
+name: Support request
+description: Something is not working the way it should.
+title: '[Bug]: '
+labels: ['support']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a report. Please search the existing issues first —
+        many problems (yt-dlp, ffmpeg, permissions) already have an answer.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Before you start
+      options:
+        - label: I have searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am running the latest release, or a recent `main`.
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What is happening?
+      description: Describe the problem concisely, including what you expected to happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `/play ...`
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Paste relevant logs. Set the environment variable `DEBUG=*` for verbose output
+        (for example, `DEBUG=* bun start`).
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How are you running Fourier?
+      options:
+        - Directly from the cloned repository (`bun start`)
+        - A tagged release / packaged build
+        - Something else (describe under "Additional context")
+    validations:
+      required: true
+
+  - type: input
+    id: fourier-version
+    attributes:
+      label: Fourier version
+      description: Shown in the startup banner, or in `package.json`.
+      placeholder: '1.0.0'
+    validations:
+      required: true
+
+  - type: input
+    id: bun-version
+    attributes:
+      label: Bun version
+      description: Run `bun --version`.
+      placeholder: '1.4.0'
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: 'Ubuntu 24.04 / macOS 15 / Windows 11'
+    validations:
+      required: true
+
+  - type: input
+    id: ffmpeg-version
+    attributes:
+      label: ffmpeg version
+      description: Run `ffmpeg -version`. Version 4.1 or later is required.
+      placeholder: '7.1'
+    validations:
+      required: true
+
+  - type: input
+    id: ytdlp-version
+    attributes:
+      label: yt-dlp version
+      description: Run `yt-dlp --version`. yt-dlp breaks YouTube support when it is out of date.
+      placeholder: '2026.01.15'
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, configuration, or anything else that helps.
+    validations:
+      required: false

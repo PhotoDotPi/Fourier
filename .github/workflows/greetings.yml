@@ -1,0 +1,41 @@
+name: Greetings
+
+# `pull_request_target` is required so the token can comment on pull requests from forks.
+# This workflow never checks out or executes pull request code. See .github/zizmor.yml.
+on:
+  pull_request_target:
+    types: [opened]
+  issues:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  greeting:
+    name: Greet first-time contributors
+    if: github.repository == 'PhotoDotPi/Fourier'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write # welcome the author of a first issue
+      pull-requests: write # welcome the author of a first pull request
+    steps:
+      - uses: actions/first-interaction@1c4688942c71f71d4f5502a26ea67c331730fa4d # v3.1.0
+        with:
+          issue-message: |
+            Thanks for opening your first issue in Fourier! 🎛️
+
+            A few things that make reports much easier to act on:
+            - the current Fourier, Bun, and yt-dlp versions,
+            - logs from a run with `DEBUG=*` set,
+            - and the exact steps that reproduce the problem.
+
+            The README's troubleshooting section covers the most common setup problems in the meantime.
+          pr-message: |
+            Thanks for your first pull request to Fourier! 🚀
+
+            CI runs lint, type-check, and the test suite. Before it is reviewed, please make sure:
+            - `bun run lint && bun run typecheck && bun run test` pass locally,
+            - the PR title follows Conventional Commits (`feat(scope): …`, `fix(scope): …`),
+            - and the PR description follows the template.
+
+            A maintainer will take a look as soon as they can.

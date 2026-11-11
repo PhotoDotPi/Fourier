@@ -1,0 +1,43 @@
+name: Stale
+
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  stale:
+    name: Mark and close stale issues and pull requests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # read repository metadata
+      issues: write # label and close stale issues
+      pull-requests: write # label and close stale pull requests
+    steps:
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          days-before-stale: 60
+          days-before-close: 14
+          stale-issue-label: 'stale'
+          stale-pr-label: 'stale'
+          exempt-issue-labels: 'pinned,security,good first issue,help wanted,blocked'
+          exempt-pr-labels: 'pinned,security,dependencies,blocked'
+          exempt-all-milestones: true
+          exempt-draft-pr: true
+          remove-stale-when-updated: true
+          stale-issue-message: |
+            This issue has been quiet for 60 days. If it is still relevant, please leave a comment or
+            add any new details — otherwise it will close automatically in 14 days. It can always be
+            reopened.
+          close-issue-message: |
+            Closing this as stale after 60 days of inactivity. If the problem persists, please reopen
+            with fresh logs and the current Fourier, Bun, and yt-dlp versions.
+          stale-pr-message: |
+            This pull request has been quiet for 60 days. Rebase it on `main`, address any review
+            comments, or leave a note if you still plan to finish it — otherwise it will close in
+            14 days.
+          close-pr-message: |
+            Closing this as stale after 60 days of inactivity. Reopen it (or open a new pull request)
+            whenever you are ready to pick it back up.

@@ -1,0 +1,16 @@
+# zizmor configuration for GitHub Actions security audits.
+# Docs: https://docs.zizmor.sh/configuration/
+#
+# Every action is pinned to a full commit SHA in .github/workflows, so the only
+# intentional exceptions are the triggers below.
+rules:
+  dangerous-triggers:
+    # The greetings, labeler, and pr-title workflows must use `pull_request_target` so
+    # their token can label and welcome pull requests opened from forks, and so the
+    # title check runs from the base branch. None of them check out or execute pull
+    # request code, and all are guarded to the upstream repository with
+    # `if: github.repository == 'PhotoDotPi/Fourier'`.
+    ignore:
+      - greetings.yml
+      - labeler.yml
+      - pr-title.yml

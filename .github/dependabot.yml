@@ -1,0 +1,49 @@
+# Dependabot configuration.
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+updates:
+  # Application dependencies (package.json / bun.lock).
+  - package-ecosystem: 'bun'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Etc/UTC'
+    open-pull-requests-limit: 10
+    versioning-strategy: 'increase'
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+      include: 'scope'
+    labels:
+      - 'dependencies'
+    # Wait for the ecosystem to settle before opening PRs, and much longer for majors.
+    cooldown:
+      default-days: 7
+      semver-major-days: 21
+    groups:
+      production-minor-and-patch:
+        dependency-type: 'production'
+        update-types: ['minor', 'patch']
+      development-minor-and-patch:
+        dependency-type: 'development'
+        update-types: ['minor', 'patch']
+
+  # Workflow actions used in .github/workflows.
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Etc/UTC'
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'chore(ci)'
+    labels:
+      - 'dependencies'
+      - 'ci'
+    groups:
+      github-actions:
+        patterns: ['*']

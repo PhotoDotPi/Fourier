@@ -1,0 +1,46 @@
+name: Feature request
+description: Suggest an idea or improvement for Fourier.
+title: '[Feature]: '
+labels: ['enhancement']
+body:
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Before you start
+      options:
+        - label: I have searched existing issues and discussions for this idea.
+          required: true
+        - label: This request is within the project's scope (a self-hosted Discord music bot).
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the frustration or gap. Focus on the problem, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like Fourier to do? Include commands or config if you have them in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways you have tried or thought about solving this.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Mockups, links, or related projects.
+    validations:
+      required: false
