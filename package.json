@@ -47,7 +47,7 @@
     "iso8601-duration": "^2.2.0",
     "musicard": "^3.0.1",
     "opusscript": "^0.1.1",
-    "p-queue": "9.3.3",
+    "p-queue": "10.0.0",
     "pagination.djs": "^4.0.18",
     "parse-duration": "^2.1.11",
     "prism-media": "^1.3.5",
