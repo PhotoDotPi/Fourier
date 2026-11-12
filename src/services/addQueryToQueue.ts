@@ -7,10 +7,10 @@ import {
   type MessagePayload,
   type TextBasedChannel,
 } from 'discord.js';
-import { ResponseError, SponsorBlock } from 'sponsorblock-api';
 import { Emoji } from '../constants/emoji.js';
 import type PlayerManager from '../managers/player.js';
 import type GetSongs from '../services/getSongs.js';
+import { ResponseError, SponsorBlock } from '../services/sponsorBlock.js';
 import { buildSuccessEmbed } from '../ui/embeds.js';
 import { shuffle } from '../utils/arrays.js';
 import { getMemberVoiceChannel, getMostPopularVoiceChannel } from '../utils/channels.js';
@@ -53,7 +53,7 @@ export default class AddQueryToQueue {
     presenter: NowPlayingPresenter,
   ) {
     this.sponsorBlockTimeoutDelay = config.SPONSORBLOCK_TIMEOUT;
-    this.sponsorBlock = config.ENABLE_SPONSORBLOCK ? new SponsorBlock('fourier-sb-integration') : undefined;
+    this.sponsorBlock = config.ENABLE_SPONSORBLOCK ? new SponsorBlock() : undefined;
     this.cache = cache;
     this.presenter = presenter;
   }

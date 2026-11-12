@@ -11,7 +11,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.4"
   },
   "scripts": {
     "lint": "biome check src tests",
@@ -29,7 +29,7 @@
     "migrations:run": "bun src/scripts/runMigrations.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.4",
+    "@biomejs/biome": "2.6.6",
     "@types/bun": "^1.4.4",
     "@types/debug": "^4.1.13",
     "@types/spotify-web-api-node": "^5.0.11",
@@ -40,23 +40,20 @@
     "@discordjs/rest": "2.6.3",
     "@discordjs/voice": "0.19.2",
     "debug": "^4.4.3",
-    "discord-api-types": "0.38.57",
+    "discord-api-types": "0.38.58",
     "discord.js": "14.28.1",
-    "fs-capacitor": "^8.0.0",
-    "get-youtube-id": "^1.0.1",
     "iso8601-duration": "^2.2.0",
     "musicard": "^3.0.1",
-    "opusscript": "^0.1.1",
     "p-queue": "10.0.0",
     "pagination.djs": "^4.0.18",
     "parse-duration": "^2.1.11",
     "prism-media": "^1.3.5",
-    "sponsorblock-api": "^0.2.4",
     "spotify-uri": "^4.1.0",
     "spotify-web-api-node": "^5.0.2"
   },
   "optionalDependencies": {
-    "@discordjs/opus": "^0.11.0"
+    "@discordjs/opus": "^0.11.0",
+    "opusscript": "^0.1.1"
   },
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.4"
 }

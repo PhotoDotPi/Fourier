@@ -1,6 +1,6 @@
-import getYouTubeID from 'get-youtube-id';
 import { parse, toSeconds } from 'iso8601-duration';
 import { ONE_HOUR_IN_SECONDS, ONE_MINUTE_IN_SECONDS } from '../utils/constants.js';
+import getYouTubeId from '../utils/getYouTubeId.js';
 import { parseTime } from '../utils/time.js';
 import { buildAudioFallbackQuery, rankAudioFallbackCandidates } from '../utils/youtubeAudioFallback.js';
 import type Config from './config.js';
@@ -128,7 +128,7 @@ export default class YoutubeAPI {
   }
 
   async getVideo(url: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
-    const videoId = url.length === 11 ? url : getYouTubeID(url);
+    const videoId = url.length === 11 ? url : getYouTubeId(url);
 
     if (!videoId) {
       throw new Error('Video could not be found.');

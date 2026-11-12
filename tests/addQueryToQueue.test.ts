@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, mock, vi } from 'bun:test';
 import { MessageFlags } from 'discord.js';
-import { ResponseError } from 'sponsorblock-api';
+import { ResponseError } from '../src/services/sponsorBlock.js';
 
 const dependencyMocks = {
   buildPlayingMessageEmbed: vi.fn(() => ({ title: 'playing' })),
