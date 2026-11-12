@@ -1,39 +1,15 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import type { ChatInputCommandInteraction } from 'discord.js';
-import type PlayerManager from '../managers/player.js';
-import { buildSeekToolbar } from '../ui/components.js';
-import { buildSeekEmbed } from '../utils/buildEmbed.js';
-import type Command from './index.js';
+import { VoicePlayerCommand } from './playerCommand.js';
+import { getSeekableSong, seekAndReply } from './seekSupport.js';
 
-export default class Replay implements Command {
+export default class Replay extends VoicePlayerCommand {
   public readonly slashCommand = new SlashCommandBuilder().setName('replay').setDescription('replay the current song');
 
-  public requiresVC = true;
-
-  private readonly playerManager: PlayerManager;
-
-  constructor(playerManager: PlayerManager) {
-    this.playerManager = playerManager;
-  }
-
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {
-    const player = this.playerManager.get(interaction.guild!.id);
+    const player = this.getPlayer(interaction);
+    getSeekableSong(player, "can't replay a livestream");
 
-    const currentSong = player.getCurrent();
-
-    if (!currentSong) {
-      throw new Error('nothing is playing');
-    }
-
-    if (currentSong.isLive) {
-      throw new Error("can't replay a livestream");
-    }
-
-    await Promise.all([player.seek(0), interaction.deferReply()]);
-
-    await interaction.editReply({
-      embeds: [buildSeekEmbed(player)],
-      components: buildSeekToolbar(),
-    });
+    await seekAndReply(interaction, () => player.seek(0), player);
   }
 }

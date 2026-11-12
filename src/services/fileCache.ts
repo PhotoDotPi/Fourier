@@ -20,10 +20,6 @@ export default class FileCacheProvider {
     this.config = config;
   }
 
-  async getPathFor(hash: string): Promise<string | null> {
-    return (await this.getEntryFor(hash))?.path ?? null;
-  }
-
   async getEntryFor(hash: string): Promise<FileCacheEntry | null> {
     return (
       (await FileCacheProvider.mutationQueue.add(async () => {

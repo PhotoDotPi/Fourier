@@ -1,27 +1,40 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { ActivityType, type PresenceStatusData } from 'discord.js';
+import { firstNonEmpty } from '../utils/string.js';
+
+const stripQuotes = (value: string): string => {
+  const quoted = (value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"));
+
+  return quoted ? value.slice(1, -1) : value;
+};
+
+const parseEnvLine = (rawLine: string): [string, string] | undefined => {
+  const line = rawLine.trim();
+
+  if (!line || line.startsWith('#')) {
+    return undefined;
+  }
+
+  const eqIndex = line.indexOf('=');
+  if (eqIndex === -1) {
+    return undefined;
+  }
+
+  const key = line.slice(0, eqIndex).trim();
+  const value = line.slice(eqIndex + 1).trim();
+
+  return [key, stripQuotes(value).replace(/\\n/g, '\n')];
+};
 
 const loadEnvFile = (envFilePath: string): void => {
   try {
     const content = readFileSync(envFilePath, 'utf-8');
     for (const rawLine of content.split(/\r?\n/)) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith('#')) {
-        continue;
-      }
-      const eqIndex = line.indexOf('=');
-      if (eqIndex === -1) {
-        continue;
-      }
-      const key = line.slice(0, eqIndex).trim();
-      let value = line.slice(eqIndex + 1).trim();
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-      const escaped = value.replace(/\\n/g, '\n');
-      if (process.env[key] === undefined) {
-        process.env[key] = escaped;
+      const entry = parseEnvLine(rawLine);
+
+      if (entry && process.env[entry[0]] === undefined) {
+        process.env[entry[0]] = entry[1];
       }
     }
   } catch {}
@@ -30,10 +43,7 @@ const loadEnvFile = (envFilePath: string): void => {
 const envFilePath = process.env.ENV_FILE ?? path.resolve(process.cwd(), '.env');
 loadEnvFile(envFilePath);
 
-export const DATA_DIR = path.resolve(process.env.DATA_DIR ? process.env.DATA_DIR : './data');
-
-const firstNonEmpty = (...values: Array<string | undefined>) =>
-  values.map((value) => value?.trim()).find((value): value is string => Boolean(value));
+const DATA_DIR = path.resolve(process.env.DATA_DIR ? process.env.DATA_DIR : './data');
 
 const parseSize = (input: string): number => {
   const trimmed = input.trim().toLowerCase();
@@ -75,6 +85,43 @@ const BOT_ACTIVITY_TYPE_MAP = {
   STREAMING: ActivityType.Streaming,
 } as const;
 
+const resolveNumericValue = (key: string, value: number): number => {
+  if (!Number.isFinite(value)) {
+    throw new Error(`Invalid numeric value for ${key}`);
+  }
+
+  if (key === 'CACHE_LIMIT_IN_BYTES' && value < 0) {
+    throw new Error('Invalid numeric value for CACHE_LIMIT_IN_BYTES: value must be non-negative');
+  }
+
+  return value;
+};
+
+const assignConfigValue = (key: string, value: unknown): unknown => {
+  if (typeof value === 'undefined') {
+    console.error(`Missing environment variable for ${key}`);
+    process.exit(1);
+  }
+
+  if (key === 'BOT_ACTIVITY_TYPE') {
+    return BOT_ACTIVITY_TYPE_MAP[(value as string).toUpperCase() as keyof typeof BOT_ACTIVITY_TYPE_MAP];
+  }
+
+  if (typeof value === 'number') {
+    return resolveNumericValue(key, value);
+  }
+
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  throw new Error(`Unsupported type for ${key}`);
+};
+
 export default class Config {
   readonly DISCORD_TOKEN!: string;
   readonly YOUTUBE_API_KEY!: string;
@@ -97,33 +144,7 @@ export default class Config {
     const config = this as unknown as Record<string, unknown>;
 
     for (const [key, value] of Object.entries(CONFIG_MAP)) {
-      if (typeof value === 'undefined') {
-        console.error(`Missing environment variable for ${key}`);
-        process.exit(1);
-      }
-
-      if (key === 'BOT_ACTIVITY_TYPE') {
-        config[key] = BOT_ACTIVITY_TYPE_MAP[(value as string).toUpperCase() as keyof typeof BOT_ACTIVITY_TYPE_MAP];
-        continue;
-      }
-
-      if (typeof value === 'number') {
-        if (!Number.isFinite(value)) {
-          throw new Error(`Invalid numeric value for ${key}`);
-        }
-
-        if (key === 'CACHE_LIMIT_IN_BYTES' && value < 0) {
-          throw new Error('Invalid numeric value for CACHE_LIMIT_IN_BYTES: value must be non-negative');
-        }
-
-        config[key] = value;
-      } else if (typeof value === 'string') {
-        config[key] = value.trim();
-      } else if (typeof value === 'boolean') {
-        config[key] = value;
-      } else {
-        throw new Error(`Unsupported type for ${key}`);
-      }
+      config[key] = assignConfigValue(key, value);
     }
   }
 }

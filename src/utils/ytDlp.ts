@@ -1,6 +1,7 @@
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { firstNonEmpty } from './string.js';
 
 interface YtDlpMediaDownload {
   readonly url?: string;
@@ -59,9 +60,6 @@ const getMediaUnavailableReason = (detail: string): YtDlpMediaUnavailableReason 
     ? 'unavailable'
     : null;
 };
-
-const firstNonEmpty = (...values: Array<string | undefined>) =>
-  values.map((value) => value?.trim()).find((value): value is string => Boolean(value));
 
 const withTemporaryCookies = async <T>(operation: (cookiesPath?: string) => Promise<T>): Promise<T> => {
   const configuredCookiesPath = firstNonEmpty(process.env.YT_DLP_COOKIES_PATH);

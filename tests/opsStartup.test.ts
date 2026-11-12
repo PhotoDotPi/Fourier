@@ -174,7 +174,7 @@ describe('OPS-01 environment and config loading', () => {
   });
 
   it('uses the default data/cache paths and two-gigabyte cache limit', async () => {
-    const { default: Config, DATA_DIR } = await loadConfig({
+    const { default: Config } = await loadConfig({
       DISCORD_TOKEN: 'discord-secret',
       YOUTUBE_API_KEY: 'youtube-secret',
     });
@@ -184,7 +184,6 @@ describe('OPS-01 environment and config loading', () => {
 
     expect(process.cwd()).toBe(resolvedTemporaryRoot);
     expect(process.cwd()).not.toBe(originalCwd);
-    expect(DATA_DIR).toBe(expectedDataDirectory);
     expect(config.DATA_DIR).toBe(expectedDataDirectory);
     expect(config.CACHE_DIR).toBe(path.join(expectedDataDirectory, 'cache'));
     expect(config.CACHE_LIMIT_IN_BYTES).toBe(2_000_000_000);

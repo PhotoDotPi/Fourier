@@ -35,7 +35,7 @@ export enum STATUS {
   IDLE,
 }
 
-export interface PlayerEvents {
+interface PlayerEvents {
   trackStart: (song: QueuedSong) => void;
   trackEnd: (song: QueuedSong | null) => void;
   statusChange: (oldStatus: STATUS, newStatus: STATUS) => void;

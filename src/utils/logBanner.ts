@@ -41,12 +41,6 @@ const logBanner = async () => {
     `${colors.dim('Made with')} ${colors.brightRed(Emoji.Music)} ${colors.dim('by')} ${colors.brightMagenta('PhotoDotPi')}`,
   );
 
-  if (process.env.BUILD_DATE) {
-    console.log(`${colors.dim('Build:')} ${colors.brightWhite(process.env.BUILD_DATE)}`);
-  }
-  if (process.env.COMMIT_HASH) {
-    console.log(`${colors.dim('Commit:')} ${colors.brightWhite(process.env.COMMIT_HASH)}`);
-  }
   console.log('');
 };
 

@@ -131,6 +131,7 @@ const fetchFollowingRedirects = async (
   redirectsLeft: number,
   signal: AbortSignal,
 ): Promise<Response> => {
+  // Outbound request targets a media URL returned by yt-dlp or an explicitly configured HLS stream.
   const response = await fetch(url, { headers, redirect: 'manual', signal });
 
   if (redirectsLeft > 0 && response.status >= 300 && response.status < 400) {
@@ -144,6 +145,79 @@ const fetchFollowingRedirects = async (
   return response;
 };
 
+const isRetryableStatus = (status: number) => status === 403 || status === 429 || status >= 500;
+
+const buildRangeHeaders = (headers: Record<string, string>, start: number, end: number): Record<string, string> => {
+  const requestHeaders: Record<string, string> = { Range: `bytes=${start}-${end}` };
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() !== 'host' && value) {
+      requestHeaders[key] = value;
+    }
+  }
+
+  return requestHeaders;
+};
+
+type RangeAttempt =
+  | { readonly ok: true; readonly response: Response }
+  | { readonly ok: false; readonly error: unknown };
+
+const fetchRangeAttempt = async (
+  url: string,
+  headers: Record<string, string>,
+  start: number,
+  end: number,
+  signal: AbortSignal,
+): Promise<RangeAttempt> => {
+  try {
+    const response = await fetchFollowingRedirects(
+      url,
+      buildRangeHeaders(headers, start, end),
+      NETWORK_MEDIA_MAX_REDIRECTS,
+      signal,
+    );
+    return { ok: true, response };
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+
+    return { ok: false, error };
+  }
+};
+
+const RETRY_RANGE = Symbol('retry-range');
+
+const interpretRangeResponse = async (
+  response: Response,
+  start: number,
+  end: number,
+  truncatable: boolean,
+  isLastAttempt: boolean,
+): Promise<FetchedRange | null | typeof RETRY_RANGE> => {
+  if (response.status === 416) {
+    await response.body?.cancel();
+    return null;
+  }
+
+  if (response.ok && response.body) {
+    return { body: response.body, complete: response.status !== 206 };
+  }
+
+  await response.body?.cancel();
+
+  if (truncatable) {
+    return null;
+  }
+
+  if (!isRetryableStatus(response.status) || isLastAttempt) {
+    throw new Error(`Media server returned HTTP ${response.status} for byte range ${start}-${end}`);
+  }
+
+  return RETRY_RANGE;
+};
+
 const fetchMediaRange = async (
   url: string,
   headers: Record<string, string>,
@@ -155,48 +229,26 @@ const fetchMediaRange = async (
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= NETWORK_MEDIA_MAX_ATTEMPTS; attempt += 1) {
-    let response: Response | undefined;
+    const isLastAttempt = attempt === NETWORK_MEDIA_MAX_ATTEMPTS;
+    const result = await fetchRangeAttempt(url, headers, start, end, signal);
 
-    try {
-      const requestHeaders: Record<string, string> = { Range: `bytes=${start}-${end}` };
-      for (const [key, value] of Object.entries(headers)) {
-        if (key.toLowerCase() !== 'host' && value) {
-          requestHeaders[key] = value;
-        }
-      }
-      response = await fetchFollowingRedirects(url, requestHeaders, NETWORK_MEDIA_MAX_REDIRECTS, signal);
-    } catch (error) {
-      if (isAbortError(error)) {
-        throw error;
-      }
-      lastError = error;
-      if (attempt < NETWORK_MEDIA_MAX_ATTEMPTS) {
+    if (!result.ok) {
+      lastError = result.error;
+      if (!isLastAttempt) {
         await sleep(NETWORK_MEDIA_RETRY_DELAY_MS * attempt);
       }
       continue;
     }
 
-    if (response.status === 416) {
-      await response.body?.cancel();
-      return null;
+    const outcome = await interpretRangeResponse(result.response, start, end, truncatable, isLastAttempt);
+
+    if (outcome !== RETRY_RANGE) {
+      return outcome;
     }
 
-    if (response.ok && response.body) {
-      return { body: response.body, complete: response.status !== 206 };
+    if (!isLastAttempt) {
+      await sleep(NETWORK_MEDIA_RETRY_DELAY_MS * attempt);
     }
-
-    await response.body?.cancel();
-
-    if (truncatable) {
-      return null;
-    }
-
-    const retryable = response.status === 403 || response.status === 429 || response.status >= 500;
-    if (!retryable || attempt === NETWORK_MEDIA_MAX_ATTEMPTS) {
-      throw new Error(`Media server returned HTTP ${response.status} for byte range ${start}-${end}`);
-    }
-
-    await sleep(NETWORK_MEDIA_RETRY_DELAY_MS * attempt);
   }
 
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
@@ -254,264 +306,398 @@ export interface CreateReadStreamOptions {
   readonly headers?: Record<string, string>;
 }
 
+interface SpawnedFfmpeg {
+  readonly proc: ChildProcess;
+  readonly stdout: Readable;
+  readonly stderr: Readable;
+}
+
+type CacheWriteStream = ReturnType<FileCacheProvider['createWriteStream']>;
+
+interface CacheStreams {
+  readonly readStream?: Readable;
+  readonly writeStream?: CacheWriteStream;
+}
+
+interface StreamContext {
+  readonly options: CreateReadStreamOptions;
+  readonly networkStream: boolean;
+  readonly proc: ChildProcess;
+  readonly stdout: Readable;
+  readonly stderr: Readable;
+  readonly capacitor: WriteStream;
+  readonly startupProbeStream: Readable;
+  readonly opusProbe: prismMedia.opus.WebmDemuxer;
+  readonly returnedStream: Readable;
+  readonly abortController?: AbortController;
+  readonly cacheReadStream?: Readable;
+  readonly cacheWriteStream?: CacheWriteStream;
+  readonly stderrChunks: Buffer[];
+  mediaReader?: Readable;
+  cacheWriteAborted: boolean;
+  cacheReadEnded: boolean;
+  ffmpegEnded: boolean;
+  hasReturnedStreamClosed: boolean;
+  startupSettled: boolean;
+  startupTimeout?: ReturnType<typeof setTimeout>;
+  readonly resolve: (stream: Readable) => void;
+  readonly reject: (error: unknown) => void;
+}
+
+interface StartupHandlers {
+  readonly rejectStartup: (error: unknown) => void;
+  readonly onPlayablePacket: () => void;
+  readonly onEndBeforePlayablePacket: () => void;
+}
+
+const buildFfmpegArgs = (options: CreateReadStreamOptions, networkStream: boolean): string[] => {
+  const inputOptions = options.inputOptions ?? (networkStream ? [] : ['-re']);
+
+  return networkStream
+    ? [...inputOptions, '-i', 'pipe:0', '-vn', '-c:a', 'libopus', '-f', 'webm', '-']
+    : [...inputOptions, '-i', options.url, '-vn', '-c:a', 'libopus', '-f', 'webm', '-'];
+};
+
+const spawnFfmpeg = (args: string[], networkStream: boolean): SpawnedFfmpeg => {
+  try {
+    const proc = spawn(FFMPEG_EXECUTABLE, args, {
+      stdio: networkStream ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
+    });
+
+    if (!proc.stdout || !proc.stderr) {
+      throw new FfmpegStartupError(new Error('FFmpeg process has no stdout/stderr'));
+    }
+
+    return { proc, stdout: proc.stdout, stderr: proc.stderr };
+  } catch (error) {
+    throw error instanceof FfmpegStartupError ? error : new FfmpegStartupError(error);
+  }
+};
+
+const createCacheStreams = (options: CreateReadStreamOptions, capacitor: WriteStream): CacheStreams => {
+  if (!options.cache || !options.fileCache || !options.hashFn) {
+    return {};
+  }
+
+  const writeStream = options.fileCache.createWriteStream(options.hashFn(options.cacheKey ?? options.url));
+  const readStream = capacitor.createReadStream();
+  readStream.pipe(writeStream, { end: false });
+
+  return { readStream, writeStream };
+};
+
+const createStreamContext = (
+  options: CreateReadStreamOptions,
+  resolve: (stream: Readable) => void,
+  reject: (error: unknown) => void,
+): StreamContext => {
+  const networkStream = options.networkStream === true && isHttpUrl(options.url);
+  const { proc, stdout, stderr } = spawnFfmpeg(buildFfmpegArgs(options, networkStream), networkStream);
+
+  const capacitor = new WriteStream();
+  const { readStream, writeStream } = createCacheStreams(options, capacitor);
+
+  return {
+    options,
+    networkStream,
+    proc,
+    stdout,
+    stderr,
+    capacitor,
+    startupProbeStream: capacitor.createReadStream(),
+    opusProbe: new prismMedia.opus.WebmDemuxer(),
+    returnedStream: capacitor.createReadStream(),
+    abortController: networkStream ? new AbortController() : undefined,
+    cacheReadStream: readStream,
+    cacheWriteStream: writeStream,
+    stderrChunks: [],
+    cacheWriteAborted: false,
+    cacheReadEnded: false,
+    ffmpegEnded: false,
+    hasReturnedStreamClosed: false,
+    startupSettled: false,
+    resolve,
+    reject,
+  };
+};
+
+const normalizeStartupError = (error: unknown): Error =>
+  error instanceof FfmpegMediaUnavailableError || error instanceof FfmpegStartupError
+    ? error
+    : new FfmpegStartupError(error);
+
+const destroyMediaInput = (ctx: StreamContext): void => {
+  ctx.abortController?.abort();
+  ctx.mediaReader?.destroy();
+
+  if (ctx.proc.stdin) {
+    ctx.proc.stdin.destroy();
+  }
+};
+
+const destroyCacheWrite = (ctx: StreamContext): void => {
+  if (ctx.cacheWriteAborted) {
+    return;
+  }
+
+  ctx.cacheWriteAborted = true;
+  ctx.cacheReadStream?.destroy();
+  ctx.cacheWriteStream?.destroy();
+};
+
+const finalizeCacheWrite = (ctx: StreamContext): void => {
+  if (
+    !ctx.cacheWriteAborted &&
+    ctx.cacheReadEnded &&
+    ctx.ffmpegEnded &&
+    ctx.cacheWriteStream &&
+    !ctx.cacheWriteStream.writableEnded
+  ) {
+    ctx.cacheWriteStream.end();
+  }
+};
+
+const createStartupHandlers = (ctx: StreamContext): StartupHandlers => {
+  function cleanupStartupListeners(): void {
+    if (ctx.startupTimeout) {
+      clearTimeout(ctx.startupTimeout);
+      ctx.startupTimeout = undefined;
+    }
+
+    ctx.opusProbe.off('data', onPlayablePacket);
+    ctx.startupProbeStream.off('end', onEndBeforePlayablePacket);
+  }
+
+  function rejectStartup(error: unknown): void {
+    if (ctx.startupSettled) {
+      return;
+    }
+
+    ctx.startupSettled = true;
+    cleanupStartupListeners();
+    destroyMediaInput(ctx);
+    destroyCacheWrite(ctx);
+    ctx.startupProbeStream.destroy();
+    ctx.opusProbe.destroy();
+    ctx.returnedStream.destroy();
+    ctx.capacitor.destroy();
+    killProcess(ctx.proc);
+    ctx.reject(normalizeStartupError(error));
+  }
+
+  function onPlayablePacket(): void {
+    if (ctx.startupSettled) {
+      return;
+    }
+
+    ctx.startupSettled = true;
+    cleanupStartupListeners();
+    ctx.startupProbeStream.destroy();
+    ctx.opusProbe.destroy();
+    ctx.resolve(ctx.returnedStream);
+  }
+
+  function onEndBeforePlayablePacket(): void {
+    if (ctx.ffmpegEnded) {
+      rejectStartup(
+        new FfmpegMediaUnavailableError(new Error('FFmpeg produced no playable Opus audio.'), 'invalid-output'),
+      );
+    }
+  }
+
+  return { rejectStartup, onPlayablePacket, onEndBeforePlayablePacket };
+};
+
+const onFfmpegEnd = (ctx: StreamContext, handlers: StartupHandlers): void => {
+  ctx.ffmpegEnded = true;
+  finalizeCacheWrite(ctx);
+
+  if (ctx.startupProbeStream.readableEnded) {
+    handlers.onEndBeforePlayablePacket();
+  }
+};
+
+const onBufferError = (ctx: StreamContext, handlers: StartupHandlers, error: unknown): void => {
+  if (!ctx.startupSettled) {
+    handlers.rejectStartup(new FfmpegStartupError(error));
+    return;
+  }
+
+  console.error(`Playback buffer failed: ${sanitizeFfmpegError(error)}`);
+  destroyCacheWrite(ctx);
+};
+
+const onCacheWriteError = (ctx: StreamContext, error: unknown): void => {
+  console.warn(`Disabling cache write: ${sanitizeFfmpegError(error)}`);
+  destroyCacheWrite(ctx);
+};
+
+const onMediaReaderError = (ctx: StreamContext, handlers: StartupHandlers, error: unknown): void => {
+  if (isAbortError(error) || (error as NodeJS.ErrnoException | null)?.code === 'EPIPE') {
+    return;
+  }
+
+  destroyCacheWrite(ctx);
+
+  if (!ctx.startupSettled) {
+    handlers.rejectStartup(new FfmpegStartupError(error, { executable: FFMPEG_EXECUTABLE }));
+    return;
+  }
+
+  console.error(`Media fetch failed during playback: ${sanitizeFfmpegError(error)}`);
+  killProcess(ctx.proc);
+
+  if (!ctx.capacitor.writableEnded) {
+    ctx.capacitor.end();
+  }
+};
+
+const onFfmpegStdoutError = (ctx: StreamContext, handlers: StartupHandlers, error: unknown): void => {
+  destroyCacheWrite(ctx);
+
+  if (ctx.hasReturnedStreamClosed) {
+    return;
+  }
+
+  if (!ctx.startupSettled) {
+    handlers.rejectStartup(new FfmpegStartupError(error));
+    return;
+  }
+
+  console.error(`FFmpeg stream failed after playback began: ${sanitizeFfmpegError(error)}`);
+
+  if (!ctx.capacitor.writableEnded) {
+    ctx.capacitor.end();
+  }
+};
+
+const onReturnedStreamClose = (ctx: StreamContext): void => {
+  if (!ctx.options.cache) {
+    destroyMediaInput(ctx);
+    killProcess(ctx.proc);
+  }
+
+  ctx.hasReturnedStreamClosed = true;
+
+  if (!ctx.capacitor.destroyed) {
+    ctx.capacitor.release();
+  }
+};
+
+const onProcError = (ctx: StreamContext, handlers: StartupHandlers, error: unknown): void => {
+  if (!ctx.startupSettled) {
+    handlers.rejectStartup(new FfmpegStartupError(error));
+  }
+};
+
+const onProcClose = (
+  ctx: StreamContext,
+  handlers: StartupHandlers,
+  code: number | null,
+  signal: NodeJS.Signals | null,
+): void => {
+  if (ctx.startupSettled) {
+    return;
+  }
+
+  const stderrText = Buffer.concat(ctx.stderrChunks).toString('utf-8').trim();
+
+  handlers.rejectStartup(
+    new FfmpegStartupError(new Error(stderrText || `FFmpeg exited with code ${code ?? signal ?? 'unknown'}`), {
+      executable: FFMPEG_EXECUTABLE,
+      version: getFfmpegVersionFromStderr(stderrText),
+      exitCode: code,
+      inputContext: ctx.networkStream ? describeMediaInput(ctx.options.url) : undefined,
+      operation: 'audio transcoding',
+    }),
+  );
+};
+
+const startNetworkMedia = (ctx: StreamContext, handlers: StartupHandlers): void => {
+  const { abortController, proc } = ctx;
+
+  if (!ctx.networkStream || !abortController || !proc.stdin) {
+    return;
+  }
+
+  ctx.mediaReader = Readable.from(readNetworkMedia(ctx.options.url, ctx.options.headers ?? {}, abortController.signal));
+  ctx.mediaReader.once('close', () => abortController.abort());
+  ctx.mediaReader.on('error', (error) => onMediaReaderError(ctx, handlers, error));
+  proc.stdin.on('error', () => ctx.mediaReader?.destroy());
+  ctx.mediaReader.pipe(proc.stdin);
+};
+
+const wireStreams = (ctx: StreamContext, handlers: StartupHandlers): void => {
+  const {
+    stdout,
+    stderr,
+    capacitor,
+    startupProbeStream,
+    returnedStream,
+    opusProbe,
+    cacheReadStream,
+    cacheWriteStream,
+  } = ctx;
+
+  stderr.on('data', (chunk: Buffer) => {
+    ctx.stderrChunks.push(chunk);
+  });
+
+  stdout.pipe(capacitor);
+  stdout.on('end', () => onFfmpegEnd(ctx, handlers));
+  stdout.on('error', (error) => onFfmpegStdoutError(ctx, handlers, error));
+
+  capacitor.on('error', (error) => onBufferError(ctx, handlers, error));
+  startupProbeStream.on('error', (error) => onBufferError(ctx, handlers, error));
+  returnedStream.on('error', (error) => onBufferError(ctx, handlers, error));
+  opusProbe.on('error', (error) => onBufferError(ctx, handlers, error));
+  cacheReadStream?.on('error', (error) => onCacheWriteError(ctx, error));
+  cacheReadStream?.once('end', () => {
+    ctx.cacheReadEnded = true;
+    finalizeCacheWrite(ctx);
+  });
+  cacheWriteStream?.on('error', (error) => onCacheWriteError(ctx, error));
+
+  opusProbe.once('data', handlers.onPlayablePacket);
+  startupProbeStream.once('end', handlers.onEndBeforePlayablePacket);
+  startupProbeStream.pipe(opusProbe);
+
+  returnedStream.on('close', () => onReturnedStreamClose(ctx));
+
+  ctx.proc.on('error', (error) => onProcError(ctx, handlers, error));
+  ctx.proc.on('close', (code, signal) => onProcClose(ctx, handlers, code, signal));
+};
+
+const armStartupTimeout = (ctx: StreamContext, handlers: StartupHandlers): void => {
+  ctx.startupTimeout = setTimeout(() => {
+    handlers.rejectStartup(
+      new FfmpegStartupError(
+        new Error(`FFmpeg produced no playable audio within ${FFMPEG_STARTUP_TIMEOUT_MS / 1000} seconds.`),
+      ),
+    );
+  }, FFMPEG_STARTUP_TIMEOUT_MS);
+};
+
+const startSession = (
+  options: CreateReadStreamOptions,
+  resolve: (stream: Readable) => void,
+  reject: (error: unknown) => void,
+): void => {
+  const ctx = createStreamContext(options, resolve, reject);
+  const handlers = createStartupHandlers(ctx);
+
+  startNetworkMedia(ctx, handlers);
+  wireStreams(ctx, handlers);
+  armStartupTimeout(ctx, handlers);
+};
+
 export function createReadStream(options: CreateReadStreamOptions): Promise<Readable> {
   return new Promise((resolve, reject) => {
-    const networkStream = options.networkStream === true && isHttpUrl(options.url);
-    const inputOptions = options.inputOptions ?? (networkStream ? [] : ['-re']);
-    const args = networkStream
-      ? [...inputOptions, '-i', 'pipe:0', '-vn', '-c:a', 'libopus', '-f', 'webm', '-']
-      : [...inputOptions, '-i', options.url, '-vn', '-c:a', 'libopus', '-f', 'webm', '-'];
-
-    let proc: ChildProcess | null = null;
-
     try {
-      proc = spawn(FFMPEG_EXECUTABLE, args, {
-        stdio: networkStream ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
-      });
+      startSession(options, resolve, reject);
     } catch (error) {
-      reject(new FfmpegStartupError(error));
-      return;
+      reject(normalizeStartupError(error));
     }
-
-    const procStdout = proc.stdout;
-    const procStderr = proc.stderr;
-
-    if (!procStdout || !procStderr) {
-      reject(new FfmpegStartupError(new Error('FFmpeg process has no stdout/stderr')));
-      return;
-    }
-
-    const abortController = networkStream ? new AbortController() : undefined;
-    let mediaReader: Readable | undefined;
-
-    const stderrChunks: Buffer[] = [];
-
-    procStderr.on('data', (chunk: Buffer) => {
-      stderrChunks.push(chunk);
-    });
-
-    const capacitor = new WriteStream();
-    const startupProbeStream = capacitor.createReadStream();
-    const opusProbe = new prismMedia.opus.WebmDemuxer();
-    let cacheReadStream: Readable | undefined;
-    let cacheWriteStream: ReturnType<FileCacheProvider['createWriteStream']> | undefined;
-
-    if (options.cache && options.fileCache && options.hashFn) {
-      cacheWriteStream = options.fileCache.createWriteStream(options.hashFn(options.cacheKey ?? options.url));
-      cacheReadStream = capacitor.createReadStream();
-      cacheReadStream.pipe(cacheWriteStream, { end: false });
-    }
-
-    const returnedStream = capacitor.createReadStream();
-    let cacheWriteAborted = false;
-    let cacheReadEnded = false;
-    let ffmpegEnded = false;
-    let hasReturnedStreamClosed = false;
-    let startupSettled = false;
-    let startupTimeout: ReturnType<typeof setTimeout> | undefined;
-
-    const cleanupStartupListeners = () => {
-      if (startupTimeout) {
-        clearTimeout(startupTimeout);
-        startupTimeout = undefined;
-      }
-
-      opusProbe.off('data', onPlayablePacket);
-      startupProbeStream.off('end', onEndBeforePlayablePacket);
-    };
-
-    const destroyMediaInput = () => {
-      abortController?.abort();
-      mediaReader?.destroy();
-      if (proc?.stdin) {
-        proc.stdin.destroy();
-      }
-    };
-
-    const destroyCacheWrite = () => {
-      if (cacheWriteAborted) {
-        return;
-      }
-
-      cacheWriteAborted = true;
-      cacheReadStream?.destroy();
-      cacheWriteStream?.destroy();
-    };
-
-    const finalizeCacheWriteIfComplete = () => {
-      if (!cacheWriteAborted && cacheReadEnded && ffmpegEnded && cacheWriteStream && !cacheWriteStream.writableEnded) {
-        cacheWriteStream.end();
-      }
-    };
-
-    const rejectStartup = (error: unknown) => {
-      if (startupSettled) {
-        return;
-      }
-
-      startupSettled = true;
-      cleanupStartupListeners();
-      destroyMediaInput();
-      destroyCacheWrite();
-      startupProbeStream.destroy();
-      opusProbe.destroy();
-      returnedStream.destroy();
-      capacitor.destroy();
-      killProcess(proc);
-      reject(
-        error instanceof FfmpegMediaUnavailableError || error instanceof FfmpegStartupError
-          ? error
-          : new FfmpegStartupError(error),
-      );
-    };
-
-    const onPlayablePacket = () => {
-      if (startupSettled) {
-        return;
-      }
-
-      startupSettled = true;
-      cleanupStartupListeners();
-      startupProbeStream.destroy();
-      opusProbe.destroy();
-      resolve(returnedStream);
-    };
-
-    const onEndBeforePlayablePacket = () => {
-      if (ffmpegEnded) {
-        rejectStartup(
-          new FfmpegMediaUnavailableError(new Error('FFmpeg produced no playable Opus audio.'), 'invalid-output'),
-        );
-      }
-    };
-
-    const onFfmpegEnd = () => {
-      ffmpegEnded = true;
-      finalizeCacheWriteIfComplete();
-      if (startupProbeStream.readableEnded) {
-        onEndBeforePlayablePacket();
-      }
-    };
-
-    const onBufferError = (error: unknown) => {
-      if (!startupSettled) {
-        rejectStartup(new FfmpegStartupError(error));
-        return;
-      }
-
-      console.error(`Playback buffer failed: ${sanitizeFfmpegError(error)}`);
-      destroyCacheWrite();
-    };
-
-    const onCacheWriteError = (error: unknown) => {
-      console.warn(`Disabling cache write: ${sanitizeFfmpegError(error)}`);
-      destroyCacheWrite();
-    };
-
-    const onMediaReaderError = (error: unknown) => {
-      if (isAbortError(error) || (error as NodeJS.ErrnoException | null)?.code === 'EPIPE') {
-        return;
-      }
-
-      destroyCacheWrite();
-
-      if (!startupSettled) {
-        rejectStartup(new FfmpegStartupError(error, { executable: FFMPEG_EXECUTABLE }));
-        return;
-      }
-
-      console.error(`Media fetch failed during playback: ${sanitizeFfmpegError(error)}`);
-      killProcess(proc);
-      if (!capacitor.writableEnded) {
-        capacitor.end();
-      }
-    };
-
-    if (networkStream && abortController && proc.stdin) {
-      mediaReader = Readable.from(readNetworkMedia(options.url, options.headers ?? {}, abortController.signal));
-      mediaReader.once('close', () => abortController.abort());
-      mediaReader.on('error', onMediaReaderError);
-      proc.stdin.on('error', () => mediaReader?.destroy());
-      mediaReader.pipe(proc.stdin);
-    }
-
-    procStdout.pipe(capacitor);
-
-    procStdout.on('end', onFfmpegEnd);
-
-    procStdout.on('error', (error) => {
-      destroyCacheWrite();
-
-      if (hasReturnedStreamClosed) {
-        return;
-      }
-
-      if (!startupSettled) {
-        rejectStartup(new FfmpegStartupError(error));
-        return;
-      }
-
-      console.error(`FFmpeg stream failed after playback began: ${sanitizeFfmpegError(error)}`);
-      if (!capacitor.writableEnded) {
-        capacitor.end();
-      }
-    });
-
-    capacitor.on('error', onBufferError);
-    startupProbeStream.on('error', onBufferError);
-    returnedStream.on('error', onBufferError);
-    opusProbe.on('error', onBufferError);
-    cacheReadStream?.on('error', onCacheWriteError);
-    cacheReadStream?.once('end', () => {
-      cacheReadEnded = true;
-      finalizeCacheWriteIfComplete();
-    });
-    cacheWriteStream?.on('error', onCacheWriteError);
-    opusProbe.once('data', onPlayablePacket);
-    startupProbeStream.once('end', onEndBeforePlayablePacket);
-    startupProbeStream.pipe(opusProbe);
-
-    startupTimeout = setTimeout(() => {
-      rejectStartup(
-        new FfmpegStartupError(
-          new Error(`FFmpeg produced no playable audio within ${FFMPEG_STARTUP_TIMEOUT_MS / 1000} seconds.`),
-        ),
-      );
-    }, FFMPEG_STARTUP_TIMEOUT_MS);
-
-    returnedStream.on('close', () => {
-      if (!options.cache) {
-        destroyMediaInput();
-        killProcess(proc);
-      }
-
-      hasReturnedStreamClosed = true;
-
-      if (!capacitor.destroyed) {
-        capacitor.release();
-      }
-    });
-
-    proc.on('error', (error) => {
-      if (!startupSettled) {
-        rejectStartup(new FfmpegStartupError(error));
-      }
-    });
-
-    proc.on('close', (code, signal) => {
-      if (!startupSettled) {
-        const stderrText = Buffer.concat(stderrChunks).toString('utf-8').trim();
-        rejectStartup(
-          new FfmpegStartupError(new Error(stderrText || `FFmpeg exited with code ${code ?? signal ?? 'unknown'}`), {
-            executable: FFMPEG_EXECUTABLE,
-            version: getFfmpegVersionFromStderr(stderrText),
-            exitCode: code,
-            inputContext: networkStream ? describeMediaInput(options.url) : undefined,
-            operation: 'audio transcoding',
-          }),
-        );
-      }
-    });
   });
 }
 

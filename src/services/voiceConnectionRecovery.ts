@@ -32,6 +32,71 @@ export function destroyVoiceConnection(connection: VoiceConnection): void {
   }
 }
 
+const isDisconnected = (connection: VoiceConnection) => connection.state.status === VoiceConnectionStatus.Disconnected;
+
+const isDestroyed = (connection: VoiceConnection) => connection.state.status === VoiceConnectionStatus.Destroyed;
+
+const isWebSocketClose4014 = (connection: VoiceConnection) => {
+  const state = connection.state as { reason?: unknown; closeCode?: unknown };
+
+  return state.reason === VoiceConnectionDisconnectReason.WebSocketClose && state.closeCode === 4014;
+};
+
+const handle4014Recovery = async (
+  connection: VoiceConnection,
+  isCurrent: VoiceConnectionRecoveryOptions['isCurrent'],
+  dispose: VoiceConnectionRecoveryOptions['dispose'],
+  runtime: VoiceConnectionRecoveryRuntime,
+): Promise<void> => {
+  try {
+    await Promise.race([
+      runtime.waitForState(connection, VoiceConnectionStatus.Connecting, 5_000),
+      runtime.waitForState(connection, VoiceConnectionStatus.Signalling, 5_000),
+    ]);
+
+    if (!isCurrent(connection) || getVoiceConnectionStatus(connection) === VoiceConnectionStatus.Destroyed) {
+      dispose(connection);
+    }
+  } catch {
+    dispose(connection);
+  }
+};
+
+const handleTransientBackoff = async (
+  connection: VoiceConnection,
+  isCurrent: VoiceConnectionRecoveryOptions['isCurrent'],
+  dispose: VoiceConnectionRecoveryOptions['dispose'],
+  runtime: VoiceConnectionRecoveryRuntime,
+): Promise<void> => {
+  if (connection.rejoinAttempts >= 5) {
+    dispose(connection);
+    return;
+  }
+
+  await runtime.sleep((connection.rejoinAttempts + 1) * 5_000);
+
+  if (!isCurrent(connection)) {
+    dispose(connection);
+    return;
+  }
+
+  const connectionStatus = getVoiceConnectionStatus(connection);
+
+  if (connectionStatus !== VoiceConnectionStatus.Disconnected) {
+    if (connectionStatus === VoiceConnectionStatus.Destroyed) {
+      dispose(connection);
+    }
+
+    return;
+  }
+
+  if (connection.rejoin()) {
+    return;
+  }
+
+  dispose(connection);
+};
+
 export async function recoverVoiceConnection(
   connection: VoiceConnection,
   { isCurrent, dispose, runtime = defaultRuntime }: VoiceConnectionRecoveryOptions,
@@ -41,56 +106,18 @@ export async function recoverVoiceConnection(
     return;
   }
 
-  if (connection.state.status !== VoiceConnectionStatus.Disconnected) {
-    if (connection.state.status === VoiceConnectionStatus.Destroyed) {
+  if (!isDisconnected(connection)) {
+    if (isDestroyed(connection)) {
       dispose(connection);
     }
 
     return;
   }
 
-  const disconnectedState = connection.state;
-  if (
-    disconnectedState.reason === VoiceConnectionDisconnectReason.WebSocketClose &&
-    disconnectedState.closeCode === 4014
-  ) {
-    try {
-      await Promise.race([
-        runtime.waitForState(connection, VoiceConnectionStatus.Connecting, 5_000),
-        runtime.waitForState(connection, VoiceConnectionStatus.Signalling, 5_000),
-      ]);
-      if (!isCurrent(connection) || getVoiceConnectionStatus(connection) === VoiceConnectionStatus.Destroyed) {
-        dispose(connection);
-      }
-
-      return;
-    } catch {
-      dispose(connection);
-      return;
-    }
+  if (isWebSocketClose4014(connection)) {
+    await handle4014Recovery(connection, isCurrent, dispose, runtime);
+    return;
   }
 
-  if (connection.rejoinAttempts < 5) {
-    await runtime.sleep((connection.rejoinAttempts + 1) * 5_000);
-
-    if (!isCurrent(connection)) {
-      dispose(connection);
-      return;
-    }
-
-    const connectionStatus = getVoiceConnectionStatus(connection);
-    if (connectionStatus !== VoiceConnectionStatus.Disconnected) {
-      if (connectionStatus === VoiceConnectionStatus.Destroyed) {
-        dispose(connection);
-      }
-
-      return;
-    }
-
-    if (connection.rejoin()) {
-      return;
-    }
-  }
-
-  dispose(connection);
+  await handleTransientBackoff(connection, isCurrent, dispose, runtime);
 }

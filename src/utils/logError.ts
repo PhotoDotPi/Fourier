@@ -7,7 +7,7 @@ const describe = (error: unknown): string => {
   return String(error);
 };
 
-export const logError = (prefix: string, error: unknown): void => {
+const logError = (prefix: string, error: unknown): void => {
   const line = colors.dim('─'.repeat(60));
   console.error('');
   console.error(colors.brightRed(colors.bold(`✗ ${prefix}`)));

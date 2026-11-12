@@ -4,6 +4,7 @@ const getYouTubeSuggestionsFor = async (query: string): Promise<string[]> => {
   url.searchParams.set('ds', 'yt');
   url.searchParams.set('q', query);
 
+  // Outbound request targets the fixed Google suggestion endpoint.
   const response = await fetch(url.toString());
   if (!response.ok) {
     throw new Error(`YouTube suggestions request failed (${response.status})`);

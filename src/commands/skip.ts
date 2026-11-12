@@ -1,27 +1,15 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import type { ChatInputCommandInteraction } from 'discord.js';
-import type PlayerManager from '../managers/player.js';
-import type NowPlayingPresenter from '../services/nowPlayingPresenter.js';
 import { buildSuccessEmbed } from '../ui/embeds.js';
-import type Command from './index.js';
+import { VoicePresenterPlayerCommand } from './playerCommand.js';
 
-export default class Skip implements Command {
+export default class Skip extends VoicePresenterPlayerCommand {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('skip')
     .setDescription('skip the next songs')
     .addIntegerOption((option) =>
       option.setName('number').setDescription('number of songs to skip [default: 1]').setRequired(false),
     );
-
-  public requiresVC = true;
-
-  private readonly playerManager: PlayerManager;
-  private readonly presenter: NowPlayingPresenter;
-
-  constructor(playerManager: PlayerManager, presenter: NowPlayingPresenter) {
-    this.playerManager = playerManager;
-    this.presenter = presenter;
-  }
 
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     const numToSkip = interaction.options.getInteger('number') ?? 1;
@@ -30,7 +18,7 @@ export default class Skip implements Command {
       throw new Error('invalid number of songs to skip');
     }
 
-    const player = this.playerManager.get(interaction.guild!.id);
+    const player = this.getPlayer(interaction);
     await interaction.deferReply();
 
     try {

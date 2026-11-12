@@ -1,13 +1,12 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
-import type PlayerManager from '../managers/player.js';
-import { buildSeekToolbar, SeekButtonId } from '../ui/components.js';
-import { buildSeekEmbed } from '../utils/buildEmbed.js';
+import { SeekButtonId } from '../ui/components.js';
 import durationStringToSeconds from '../utils/durationStringToSeconds.js';
 import { parseTime } from '../utils/time.js';
-import type Command from './index.js';
+import { VoicePlayerCommand } from './playerCommand.js';
+import { getSeekableSong, replyWithSeekEmbed, seekAndReply } from './seekSupport.js';
 
-export default class Seek implements Command {
+export default class Seek extends VoicePlayerCommand {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('seek')
     .setDescription('seek to a position from beginning of song')
@@ -20,26 +19,9 @@ export default class Seek implements Command {
 
   public readonly handledButtonIds = Object.values(SeekButtonId);
 
-  public requiresVC = true;
-
-  private readonly playerManager: PlayerManager;
-
-  constructor(playerManager: PlayerManager) {
-    this.playerManager = playerManager;
-  }
-
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {
-    const player = this.playerManager.get(interaction.guild!.id);
-
-    const currentSong = player.getCurrent();
-
-    if (!currentSong) {
-      throw new Error('nothing is playing');
-    }
-
-    if (currentSong.isLive) {
-      throw new Error("can't seek in a livestream");
-    }
+    const player = this.getPlayer(interaction);
+    const currentSong = getSeekableSong(player, "can't seek in a livestream");
 
     const time = interaction.options.getString('time')!.trim();
 
@@ -63,26 +45,12 @@ export default class Seek implements Command {
       throw new Error("can't seek past the end of the song");
     }
 
-    await Promise.all([player.seek(seekTime), interaction.deferReply()]);
-
-    await interaction.editReply({
-      embeds: [buildSeekEmbed(player)],
-      components: buildSeekToolbar(),
-    });
+    await seekAndReply(interaction, () => player.seek(seekTime), player);
   }
 
   public async handleButtonInteraction(interaction: ButtonInteraction): Promise<void> {
-    const player = this.playerManager.get(interaction.guild!.id);
-
-    const currentSong = player.getCurrent();
-
-    if (!currentSong) {
-      throw new Error('nothing is playing');
-    }
-
-    if (currentSong.isLive) {
-      throw new Error("can't seek in a livestream");
-    }
+    const player = this.getPlayer(interaction);
+    const currentSong = getSeekableSong(player, "can't seek in a livestream");
 
     const position = player.getPosition();
     await interaction.deferUpdate();
@@ -101,9 +69,6 @@ export default class Seek implements Command {
         throw new Error('unknown button interaction');
     }
 
-    await interaction.editReply({
-      embeds: [buildSeekEmbed(player)],
-      components: buildSeekToolbar(),
-    });
+    await replyWithSeekEmbed(interaction, player);
   }
 }

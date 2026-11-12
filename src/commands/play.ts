@@ -13,8 +13,24 @@ import getYouTubeAndSpotifySuggestionsFor, {
   SpotifySuggestionsUnavailableError,
 } from '../utils/getYouTubeAndSpotifySuggestionsFor.js';
 import type Command from './index.js';
+import { addQueueOptions } from './playOptions.js';
 
 const MAX_CHOICE_LENGTH = 100;
+const SUPPORTED_PROTOCOLS = ['http:', 'https:', 'spotify:'];
+
+const getUrlProtocol = (value: string): string | undefined => {
+  try {
+    return new URL(value).protocol;
+  } catch {
+    return undefined;
+  }
+};
+
+const isUrlQuery = (value: string): boolean => {
+  const protocol = getUrlProtocol(value);
+
+  return Boolean(protocol && SUPPORTED_PROTOCOLS.includes(protocol));
+};
 
 const toRecentTrackChoice = (track: RecentTrack): APIApplicationCommandOptionChoice => {
   const url =
@@ -56,18 +72,14 @@ export default class Play implements Command {
   }
 
   private buildCommand(queryDescription: string) {
-    return new SlashCommandBuilder()
-      .setName('play')
-      .setDescription('play a song')
-      .addStringOption((option) =>
-        option.setName('query').setDescription(queryDescription).setAutocomplete(true).setRequired(true),
-      )
-      .addBooleanOption((option) => option.setName('immediate').setDescription('add track to the front of the queue'))
-      .addBooleanOption((option) =>
-        option.setName('shuffle').setDescription("shuffle the input if you're adding multiple tracks"),
-      )
-      .addBooleanOption((option) => option.setName('split').setDescription('if a track has chapters, split it'))
-      .addBooleanOption((option) => option.setName('skip').setDescription('skip the currently playing track'));
+    return addQueueOptions(
+      new SlashCommandBuilder()
+        .setName('play')
+        .setDescription('play a song')
+        .addStringOption((option) =>
+          option.setName('query').setDescription(queryDescription).setAutocomplete(true).setRequired(true),
+        ),
+    );
   }
 
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -86,43 +98,43 @@ export default class Play implements Command {
   public async handleAutocompleteInteraction(interaction: AutocompleteInteraction): Promise<void> {
     const query = interaction.options.getString('query')?.trim();
 
-    if (!query || query.length === 0) {
-      const recentTracks = await this.getRecentTracks(interaction.guildId ?? '');
-
-      if (recentTracks.length === 0) {
-        await interaction.respond([]);
-        return;
-      }
-
-      await interaction.respond(recentTracks.slice(0, 25).map(toRecentTrackChoice));
+    if (!query) {
+      await this.respondWithRecentTracks(interaction);
       return;
     }
 
-    let queryProtocol: string | undefined;
-    try {
-      queryProtocol = new URL(query).protocol;
-    } catch {}
-
-    if (queryProtocol && ['http:', 'https:', 'spotify:'].includes(queryProtocol)) {
+    if (isUrlQuery(query)) {
       await interaction.respond([]);
       return;
     }
 
-    let suggestions: APIApplicationCommandOptionChoice[];
+    const suggestions = await this.getSuggestions(query);
+    await interaction.respond(suggestions);
+  }
 
+  private async respondWithRecentTracks(interaction: AutocompleteInteraction): Promise<void> {
+    const recentTracks = await this.getRecentTracks(interaction.guildId ?? '');
+
+    if (recentTracks.length === 0) {
+      await interaction.respond([]);
+      return;
+    }
+
+    await interaction.respond(recentTracks.slice(0, 25).map(toRecentTrackChoice));
+  }
+
+  private async getSuggestions(query: string): Promise<APIApplicationCommandOptionChoice[]> {
     try {
-      suggestions = await this.cache.wrap(getYouTubeAndSpotifySuggestionsFor, query, this.spotify, 10, {
+      return await this.cache.wrap(getYouTubeAndSpotifySuggestionsFor, query, this.spotify, 10, {
         expiresIn: ONE_HOUR_IN_SECONDS,
         key: `autocomplete:${query}`,
       });
     } catch (error: unknown) {
       if (error instanceof SpotifySuggestionsUnavailableError) {
-        suggestions = error.suggestions;
-      } else {
-        throw error;
+        return error.suggestions;
       }
-    }
 
-    await interaction.respond(suggestions);
+      throw error;
+    }
   }
 }

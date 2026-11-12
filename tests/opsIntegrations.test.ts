@@ -84,7 +84,6 @@ mock.module('../src/services/voiceConnectionRecovery.js', () => ({
     },
     options: { isCurrent: (c: unknown) => boolean; dispose: (c: unknown) => void },
   ) => {
-    const { entersState: waitForState } = dependencyMocks;
     const { isCurrent, dispose } = options;
     const VoiceConnectionStatus = {
       Connecting: 'connecting',
@@ -95,51 +94,70 @@ mock.module('../src/services/voiceConnectionRecovery.js', () => ({
     } as const;
     const VoiceConnectionDisconnectReason = { WebSocketClose: 'websocket-close' } as const;
 
-    if (!isCurrent(connection)) {
-      dispose(connection);
-      return;
-    }
-    if (connection.state.status !== VoiceConnectionStatus.Disconnected) {
-      if (connection.state.status === VoiceConnectionStatus.Destroyed) {
-        dispose(connection);
-      }
-      return;
-    }
-    if (
-      connection.state.reason === VoiceConnectionDisconnectReason.WebSocketClose &&
-      connection.state.closeCode === 4014
-    ) {
+    const isDisconnected = () => connection.state.status === VoiceConnectionStatus.Disconnected;
+    const isDestroyed = () => connection.state.status === VoiceConnectionStatus.Destroyed;
+    const is4014 = () =>
+      connection.state.reason === VoiceConnectionDisconnectReason.WebSocketClose && connection.state.closeCode === 4014;
+
+    const handle4014 = async () => {
       try {
         await Promise.race([
-          waitForState(connection, VoiceConnectionStatus.Connecting, 5_000),
-          waitForState(connection, VoiceConnectionStatus.Signalling, 5_000),
+          dependencyMocks.entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+          dependencyMocks.entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
         ]);
         if (!isCurrent(connection) || (connection.state.status as string) === VoiceConnectionStatus.Destroyed) {
           dispose(connection);
         }
-        return;
       } catch {
+        dispose(connection);
+      }
+    };
+
+    const handleBackoff = async () => {
+      if (connection.rejoinAttempts >= 5) {
         dispose(connection);
         return;
       }
-    }
-    if (connection.rejoinAttempts < 5) {
+
       await dependencyMocks.sleep((connection.rejoinAttempts + 1) * 5_000);
+
       if (!isCurrent(connection)) {
         dispose(connection);
         return;
       }
+
       if (connection.state.status !== VoiceConnectionStatus.Disconnected) {
         if (connection.state.status === VoiceConnectionStatus.Destroyed) {
           dispose(connection);
         }
         return;
       }
+
       if (connection.rejoin()) {
         return;
       }
+
+      dispose(connection);
+    };
+
+    if (!isCurrent(connection)) {
+      dispose(connection);
+      return;
     }
-    dispose(connection);
+
+    if (!isDisconnected()) {
+      if (isDestroyed()) {
+        dispose(connection);
+      }
+      return;
+    }
+
+    if (is4014()) {
+      await handle4014();
+      return;
+    }
+
+    await handleBackoff();
   },
 }));
 
@@ -1632,3 +1650,93 @@ describe('OPS-13 transient voice recovery', () => {
     expect(player.voiceConnection).toBeNull();
   });
 });
+mock.module('../src/services/voiceConnectionRecovery.js', () => ({
+  destroyVoiceConnection: (connection: { state: { status: string } }) => {
+    if (connection.state.status !== 'destroyed') {
+      (connection as unknown as { destroy: () => void }).destroy();
+    }
+  },
+  recoverVoiceConnection: async (
+    connection: {
+      rejoin: () => boolean;
+      rejoinAttempts: number;
+      state: { status: string; reason?: string; closeCode?: number };
+    },
+    options: { isCurrent: (c: unknown) => boolean; dispose: (c: unknown) => void },
+  ) => {
+    const { isCurrent, dispose } = options;
+    const VoiceConnectionStatus = {
+      Connecting: 'connecting',
+      Disconnected: 'disconnected',
+      Destroyed: 'destroyed',
+      Ready: 'ready',
+      Signalling: 'signalling',
+    } as const;
+    const VoiceConnectionDisconnectReason = { WebSocketClose: 'websocket-close' } as const;
+
+    const isDisconnected = () => connection.state.status === VoiceConnectionStatus.Disconnected;
+    const isDestroyed = () => connection.state.status === VoiceConnectionStatus.Destroyed;
+    const is4014 = () =>
+      connection.state.reason === VoiceConnectionDisconnectReason.WebSocketClose && connection.state.closeCode === 4014;
+
+    const handle4014 = async () => {
+      try {
+        await Promise.race([
+          dependencyMocks.entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+          dependencyMocks.entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+        ]);
+        if (!isCurrent(connection) || (connection.state.status as string) === VoiceConnectionStatus.Destroyed) {
+          dispose(connection);
+        }
+      } catch {
+        dispose(connection);
+      }
+    };
+
+    const handleBackoff = async () => {
+      if (connection.rejoinAttempts >= 5) {
+        dispose(connection);
+        return;
+      }
+
+      await dependencyMocks.sleep((connection.rejoinAttempts + 1) * 5_000);
+
+      if (!isCurrent(connection)) {
+        dispose(connection);
+        return;
+      }
+
+      if (connection.state.status !== VoiceConnectionStatus.Disconnected) {
+        if (connection.state.status === VoiceConnectionStatus.Destroyed) {
+          dispose(connection);
+        }
+        return;
+      }
+
+      if (connection.rejoin()) {
+        return;
+      }
+
+      dispose(connection);
+    };
+
+    if (!isCurrent(connection)) {
+      dispose(connection);
+      return;
+    }
+
+    if (!isDisconnected()) {
+      if (isDestroyed()) {
+        dispose(connection);
+      }
+      return;
+    }
+
+    if (is4014()) {
+      await handle4014();
+      return;
+    }
+
+    await handleBackoff();
+  },
+}));

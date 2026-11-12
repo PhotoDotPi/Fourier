@@ -64,8 +64,4 @@ export default class KeyValueCacheProvider {
   async set<T>(key: string, value: T, expiresIn: Seconds): Promise<void> {
     await kvRepo.upsertKeyValue(key, JSON.stringify(value), futureTimeToDate(expiresIn));
   }
-
-  async delete(key: string): Promise<void> {
-    await kvRepo.deleteByKey(key);
-  }
 }

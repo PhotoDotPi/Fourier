@@ -6,6 +6,33 @@ import type SpotifyAPI from './spotifyApi.js';
 import type { SpotifyTrack } from './spotifyApi.js';
 import type YoutubeAPI from './youtubeApi.js';
 
+const SUPPORTED_PROTOCOLS = ['http:', 'https:', 'spotify:'];
+const YOUTUBE_HOSTS = ['www.youtube.com', 'youtu.be', 'youtube.com', 'music.youtube.com', 'www.music.youtube.com'];
+
+const parseUrl = (query: string): URL | undefined => {
+  try {
+    return new URL(query);
+  } catch (_: unknown) {
+    return undefined;
+  }
+};
+
+const buildSpotifyExtraMessage = (totalSongs: number, playlistLimit: number, nSongsNotFound: number): string => {
+  const messages: string[] = [];
+
+  if (totalSongs > playlistLimit) {
+    messages.push(`a random sample of ${playlistLimit} songs was taken`);
+  }
+
+  if (nSongsNotFound === 1) {
+    messages.push('1 song was not found');
+  } else if (nSongsNotFound !== 0) {
+    messages.push(`${nSongsNotFound.toString()} songs were not found`);
+  }
+
+  return messages.join(' and ');
+};
+
 export default class GetSongs {
   private readonly youtubeAPI: YoutubeAPI;
   private readonly spotifyAPI?: SpotifyAPI;
@@ -20,84 +47,79 @@ export default class GetSongs {
     playlistLimit: number,
     shouldSplitChapters: boolean,
   ): Promise<[SongMetadata[], string]> {
-    const newSongs: SongMetadata[] = [];
-    let extraMsg = '';
-    let url: URL | undefined;
+    const url = parseUrl(query);
 
-    try {
-      url = new URL(query);
-    } catch (_: unknown) {
-      url = undefined;
+    if (!url || !SUPPORTED_PROTOCOLS.includes(url.protocol)) {
+      return [await this.songsFromSearch(query, shouldSplitChapters), ''];
     }
-
-    const supportedProtocols = ['http:', 'https:', 'spotify:'];
-
-    if (!url || !supportedProtocols.includes(url.protocol)) {
-      const songs = await this.youtubeVideoSearch(query, shouldSplitChapters);
-
-      if (songs) {
-        newSongs.push(...songs);
-      } else {
-        throw new Error("that doesn't exist");
-      }
-
-      return [newSongs, extraMsg];
-    }
-
-    const YOUTUBE_HOSTS = ['www.youtube.com', 'youtu.be', 'youtube.com', 'music.youtube.com', 'www.music.youtube.com'];
 
     if (YOUTUBE_HOSTS.includes(url.host)) {
-      if (url.searchParams.get('list')) {
-        const songs = await this.youtubePlaylist(url.searchParams.get('list')!, shouldSplitChapters);
-        newSongs.push(...songs.slice(0, playlistLimit));
-      } else {
-        const songs = await this.youtubeVideo(url.href, shouldSplitChapters);
-
-        if (songs) {
-          newSongs.push(...songs);
-        } else {
-          throw new Error("that doesn't exist");
-        }
-      }
-    } else if (url.protocol === 'spotify:' || url.host === 'open.spotify.com') {
-      if (this.spotifyAPI === undefined) {
-        throw new Error('Spotify is not enabled!');
-      }
-
-      const [convertedSongs, nSongsNotFound, totalSongs] = await this.spotifySource(
-        query,
-        playlistLimit,
-        shouldSplitChapters,
-      );
-
-      if (totalSongs > playlistLimit) {
-        extraMsg = `a random sample of ${playlistLimit} songs was taken`;
-      }
-
-      if (totalSongs > playlistLimit && nSongsNotFound !== 0) {
-        extraMsg += ' and ';
-      }
-
-      if (nSongsNotFound !== 0) {
-        if (nSongsNotFound === 1) {
-          extraMsg += '1 song was not found';
-        } else {
-          extraMsg += `${nSongsNotFound.toString()} songs were not found`;
-        }
-      }
-
-      newSongs.push(...convertedSongs);
-    } else {
-      const song = await this.httpLiveStream(query);
-
-      if (song) {
-        newSongs.push(song);
-      } else {
-        throw new Error("that doesn't exist");
-      }
+      return [await this.songsFromYoutube(url, playlistLimit, shouldSplitChapters), ''];
     }
 
-    return [newSongs, extraMsg];
+    if (url.protocol === 'spotify:' || url.host === 'open.spotify.com') {
+      return this.songsFromSpotify(query, playlistLimit, shouldSplitChapters);
+    }
+
+    return [[await this.httpLiveStreamOrThrow(query)], ''];
+  }
+
+  private async songsFromSearch(query: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
+    const songs = await this.youtubeVideoSearch(query, shouldSplitChapters);
+
+    if (!songs) {
+      throw new Error("that doesn't exist");
+    }
+
+    return songs;
+  }
+
+  private async songsFromYoutube(
+    url: URL,
+    playlistLimit: number,
+    shouldSplitChapters: boolean,
+  ): Promise<SongMetadata[]> {
+    const listId = url.searchParams.get('list');
+
+    if (listId) {
+      return (await this.youtubePlaylist(listId, shouldSplitChapters)).slice(0, playlistLimit);
+    }
+
+    const songs = await this.youtubeVideo(url.href, shouldSplitChapters);
+
+    if (!songs) {
+      throw new Error("that doesn't exist");
+    }
+
+    return songs;
+  }
+
+  private async songsFromSpotify(
+    query: string,
+    playlistLimit: number,
+    shouldSplitChapters: boolean,
+  ): Promise<[SongMetadata[], string]> {
+    if (this.spotifyAPI === undefined) {
+      throw new Error('Spotify is not enabled!');
+    }
+
+    const [convertedSongs, nSongsNotFound, totalSongs] = await this.spotifySource(
+      query,
+      playlistLimit,
+      shouldSplitChapters,
+    );
+
+    return [convertedSongs, buildSpotifyExtraMessage(totalSongs, playlistLimit, nSongsNotFound)];
+  }
+
+  private async httpLiveStreamOrThrow(url: string): Promise<SongMetadata> {
+    const song = await this.httpLiveStream(url);
+
+    if (!song) {
+      throw new Error("that doesn't exist");
+    }
+
+    return song;
   }
 
   private async youtubeVideoSearch(query: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {

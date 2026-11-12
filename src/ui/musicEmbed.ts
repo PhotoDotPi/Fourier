@@ -1,55 +1,10 @@
 import { AttachmentBuilder, EmbedBuilder } from 'discord.js';
-import { Emoji } from '../constants/emoji.js';
 import type { MusicCardResult } from '../services/musicCard.js';
 import type { EnrichedTrackMetadata } from '../services/musicMetadata.js';
 import type Player from '../services/player.js';
-import type { QueuedSong } from '../services/playerTypes.js';
-import { MediaSource, STATUS } from '../services/playerTypes.js';
-import getProgressBar from '../utils/getProgressBar.js';
-import { prettyTime } from '../utils/time.js';
+import { MediaSource, type QueuedSong, STATUS } from '../services/playerTypes.js';
+import { applySpeakingIndicator, getPlayerUI, getSongTitle } from './embedShared.js';
 import { EmbedColor } from './embeds.js';
-
-const MAX_TITLE_LENGTH = 48;
-const MAX_NON_ASCII_TITLE_LENGTH = 28;
-
-const getMaxSongTitleLength = (title: string): number => {
-  const nonASCII = /[^\x00-\x7F]+/;
-  return nonASCII.test(title) ? MAX_NON_ASCII_TITLE_LENGTH : MAX_TITLE_LENGTH;
-};
-
-const getSongTitle = ({ title, url, offset, source }: QueuedSong, shouldTruncate = false): string => {
-  if (source === MediaSource.HLS) {
-    return `[${title}](${url})`;
-  }
-
-  const cleanTitle = title.replace(/\[.*\]/, '').trim();
-  const displayTitle = shouldTruncate ? cleanTitle.slice(0, getMaxSongTitleLength(cleanTitle)) : cleanTitle;
-
-  const getYouTubeID = (input: string): string | null => {
-    const match = input.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
-    return match?.[1] ?? null;
-  };
-
-  const youtubeId = url.length === 11 ? url : (getYouTubeID(url) ?? '');
-
-  return `[${displayTitle}](https://www.youtube.com/watch?v=${youtubeId}${offset === 0 ? '' : `&t=${String(offset)}`})`;
-};
-
-const getPlayerUI = (player: Player): string => {
-  const song = player.getCurrent();
-  if (!song) {
-    return '';
-  }
-
-  const position = player.getPosition();
-  const stateEmoji = player.status === STATUS.PLAYING ? Emoji.Play : Emoji.Pause;
-  const progressBar = getProgressBar(10, song.length > 0 ? position / song.length : 0);
-  const elapsedTime = song.isLive ? 'live' : `${prettyTime(position)}/${prettyTime(song.length)}`;
-  const loop = player.loopCurrentSong ? Emoji.RepeatOne : player.loopCurrentQueue ? Emoji.RepeatAll : '';
-  const volume = typeof player.getVolume() === 'number' ? `${Emoji.VolumeDown} ${player.getVolume()!}%` : '';
-
-  return `${stateEmoji} ${progressBar} \`[${elapsedTime}]\` ${volume} ${loop}`.trim();
-};
 
 const getSourceLabel = (song: QueuedSong): string => {
   if (song.source === MediaSource.HLS) {
@@ -76,18 +31,7 @@ export interface MusicPlayingMessageResult {
   attachments: AttachmentBuilder[];
 }
 
-const getSpeakingIndicator = (player: Player): string => {
-  const speakingUserIds = player.getSpeakingUserIds();
-
-  if (speakingUserIds.length === 0) {
-    return '';
-  }
-
-  const names = speakingUserIds.map((userId) => `<@${userId}>`).join(', ');
-  return `${Emoji.Mic} ${names} ${speakingUserIds.length === 1 ? 'is' : 'are'} talking ${Emoji.Signal}`;
-};
-
-export const buildMusicCardEmbed = (
+const buildMusicCardEmbed = (
   player: Player,
   meta: EnrichedTrackMetadata,
   cardResult: MusicCardResult,
@@ -99,7 +43,6 @@ export const buildMusicCardEmbed = (
   }
 
   const cardImage = new AttachmentBuilder(cardResult.buffer, { name: 'now-playing.png' });
-
   const metaLines = getMetadataLines(meta);
   const statusLabel = player.status === STATUS.PLAYING ? 'Now Playing' : 'Paused';
   const statusColor = player.status === STATUS.PLAYING ? EmbedColor.Brand : EmbedColor.Paused;
@@ -119,12 +62,7 @@ export const buildMusicCardEmbed = (
     .setImage('attachment://now-playing.png')
     .setFooter({ text: getSourceLabel(song) });
 
-  if (options?.includeSpeakingIndicator) {
-    const speakingLine = getSpeakingIndicator(player);
-    if (speakingLine !== '' && player.status === STATUS.PLAYING) {
-      embed.addFields([{ name: `${Emoji.Mic} Who's talking`, value: speakingLine }]);
-    }
-  }
+  applySpeakingIndicator(embed, player, options?.includeSpeakingIndicator);
 
   return {
     embeds: [embed],
@@ -132,7 +70,7 @@ export const buildMusicCardEmbed = (
   };
 };
 
-export const buildFallbackPlayingEmbed = (
+const buildFallbackPlayingEmbed = (
   player: Player,
   options?: { includeSpeakingIndicator?: boolean },
 ): MusicPlayingMessageResult => {
@@ -147,15 +85,10 @@ export const buildFallbackPlayingEmbed = (
   const embed = new EmbedBuilder()
     .setColor(statusColor)
     .setTitle(statusLabel)
-    .setDescription(`**${getSongTitle(song)}**\nRequested by: <@${song.requestedBy}>\n\n${getPlayerUI(player)}`)
+    .setDescription(`**${getSongTitle(song)}**\nRequested by: <@${song.requestedBy}>\n\n${getPlayerUI(player, true)}`)
     .setFooter({ text: getSourceLabel(song) });
 
-  if (options?.includeSpeakingIndicator) {
-    const speakingLine = getSpeakingIndicator(player);
-    if (speakingLine !== '' && player.status === STATUS.PLAYING) {
-      embed.addFields([{ name: `${Emoji.Mic} Who's talking`, value: speakingLine }]);
-    }
-  }
+  applySpeakingIndicator(embed, player, options?.includeSpeakingIndicator);
 
   if (song.thumbnailUrl) {
     embed.setThumbnail(song.thumbnailUrl);

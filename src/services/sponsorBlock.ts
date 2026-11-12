@@ -79,6 +79,7 @@ export class SponsorBlock {
       params.set('requiredSegments', JSON.stringify(requiredSegments));
     }
 
+    // Outbound request targets the fixed SponsorBlock API host.
     const response = await fetch(`${this.options.baseURL}/api/skipSegments?${params.toString()}`, {
       headers: { 'User-Agent': this.options.userAgent },
     });
