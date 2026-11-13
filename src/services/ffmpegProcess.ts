@@ -394,31 +394,36 @@ const createStreamContext = (
   const networkStream = options.networkStream === true && isHttpUrl(options.url);
   const { proc, stdout, stderr } = spawnFfmpeg(buildFfmpegArgs(options, networkStream), networkStream);
 
-  const capacitor = new WriteStream();
-  const { readStream, writeStream } = createCacheStreams(options, capacitor);
+  try {
+    const capacitor = new WriteStream();
+    const { readStream, writeStream } = createCacheStreams(options, capacitor);
 
-  return {
-    options,
-    networkStream,
-    proc,
-    stdout,
-    stderr,
-    capacitor,
-    startupProbeStream: capacitor.createReadStream(),
-    opusProbe: new prismMedia.opus.WebmDemuxer(),
-    returnedStream: capacitor.createReadStream(),
-    abortController: networkStream ? new AbortController() : undefined,
-    cacheReadStream: readStream,
-    cacheWriteStream: writeStream,
-    stderrChunks: [],
-    cacheWriteAborted: false,
-    cacheReadEnded: false,
-    ffmpegEnded: false,
-    hasReturnedStreamClosed: false,
-    startupSettled: false,
-    resolve,
-    reject,
-  };
+    return {
+      options,
+      networkStream,
+      proc,
+      stdout,
+      stderr,
+      capacitor,
+      startupProbeStream: capacitor.createReadStream(),
+      opusProbe: new prismMedia.opus.WebmDemuxer(),
+      returnedStream: capacitor.createReadStream(),
+      abortController: networkStream ? new AbortController() : undefined,
+      cacheReadStream: readStream,
+      cacheWriteStream: writeStream,
+      stderrChunks: [],
+      cacheWriteAborted: false,
+      cacheReadEnded: false,
+      ffmpegEnded: false,
+      hasReturnedStreamClosed: false,
+      startupSettled: false,
+      resolve,
+      reject,
+    };
+  } catch (error) {
+    killProcess(proc);
+    throw error;
+  }
 };
 
 const normalizeStartupError = (error: unknown): Error =>

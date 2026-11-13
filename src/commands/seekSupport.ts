@@ -32,6 +32,7 @@ export const seekAndReply = async (
   seek: () => Promise<void>,
   player: Player,
 ): Promise<void> => {
-  await Promise.all([seek(), interaction.deferReply()]);
+  await interaction.deferReply();
+  await seek();
   await replyWithSeekEmbed(interaction, player);
 };

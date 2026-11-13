@@ -463,6 +463,19 @@ describe('seek parsing', () => {
     },
   );
 
+  it('defers before a rejected /seek so the failure is reported through editReply', async () => {
+    const player = {
+      getCurrent: () => ({ length: 300, isLive: false }),
+      seek: vi.fn().mockRejectedValue(new Error('seek failed')),
+      getPosition: () => 0,
+    };
+    const { interaction, deferReply } = makeInteraction({ strings: { time: '10' } });
+
+    await expect(new Seek(managerFor(player) as never).execute(interaction)).rejects.toThrow('seek failed');
+    expect(player.seek).toHaveBeenCalledWith(10);
+    expect(deferReply).toHaveBeenCalledOnce();
+  });
+
   it('keeps /seek 0 valid', async () => {
     let position = -1;
     const player = {
