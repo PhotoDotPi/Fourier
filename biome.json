@@ -33,7 +33,7 @@
   "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "overrides": [
     {
-      "includes": ["src/ui/musicEmbed.ts", "src/utils/buildEmbed.ts"],
+      "includes": ["src/ui/musicEmbed.ts", "src/ui/embedShared.ts", "src/utils/buildEmbed.ts"],
       "linter": { "rules": { "suspicious": { "noControlCharactersInRegex": "off" } } }
     },
     {

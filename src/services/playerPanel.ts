@@ -17,6 +17,8 @@ import { STATUS } from './player.js';
 
 const PANEL_REFRESH_INTERVAL_MS = 10_000;
 
+type PanelButtonIdValue = (typeof PanelButtonId)[keyof typeof PanelButtonId];
+
 export default class PlayerPanelManager {
   private readonly playerManager: PlayerManager;
   private readonly client: Client;
@@ -25,6 +27,54 @@ export default class PlayerPanelManager {
   private readonly panels = new Map<string, PlayerPanelRow>();
   private readonly players = new Map<string, Player>();
   private readonly updateChains = new Map<string, Promise<void>>();
+
+  private readonly buttonHandlers: Partial<
+    Record<PanelButtonIdValue, (interaction: ButtonInteraction, player: Player) => Promise<void>>
+  > = {
+    [PanelButtonId.Pause]: (interaction, player) => this.handleToggle(interaction, player),
+
+    [PanelButtonId.Skip]: async (interaction, player) => {
+      if (!player.canGoForward(1)) {
+        throw new Error('no song to skip to');
+      }
+
+      await player.forward(1);
+      await this.updateMessageFromInteraction(interaction, player);
+    },
+
+    [PanelButtonId.Stop]: async (interaction, player) => {
+      player.stop();
+      await this.updateMessageFromInteraction(interaction, player);
+    },
+
+    [PanelButtonId.Shuffle]: async (interaction, player) => {
+      if (player.isQueueEmpty()) {
+        throw new Error('not enough songs to shuffle');
+      }
+
+      player.shuffle();
+      await this.updateMessageFromInteraction(interaction, player);
+    },
+
+    [PanelButtonId.Loop]: async (interaction, player) => {
+      player.setLoopCurrentSong(!player.loopCurrentSong);
+      await this.updateMessageFromInteraction(interaction, player);
+    },
+
+    [PanelButtonId.VolumeDown]: async (interaction, player) => {
+      player.setVolume(Math.max(0, player.getVolume() - 5));
+      await this.updateMessageFromInteraction(interaction, player);
+    },
+
+    [PanelButtonId.VolumeUp]: async (interaction, player) => {
+      player.setVolume(Math.min(100, player.getVolume() + 5));
+      await this.updateMessageFromInteraction(interaction, player);
+    },
+
+    [PanelButtonId.Search]: async (interaction) => {
+      await interaction.showModal(buildPlayerPanelSearchModal());
+    },
+  };
 
   constructor(
     playerManager: PlayerManager,
@@ -114,53 +164,10 @@ export default class PlayerPanelManager {
     const player = this.players.get(guildId) ?? this.playerManager.get(guildId);
     this.players.set(guildId, player);
 
-    switch (interaction.customId) {
-      case PanelButtonId.Pause:
-        await this.handleToggle(interaction, player);
-        return;
+    const handler = this.buttonHandlers[interaction.customId as PanelButtonIdValue];
 
-      case PanelButtonId.Skip:
-        if (!player.canGoForward(1)) {
-          throw new Error('no song to skip to');
-        }
-        await player.forward(1);
-        await this.updateMessageFromInteraction(interaction, player);
-        return;
-
-      case PanelButtonId.Stop:
-        player.stop();
-        await this.updateMessageFromInteraction(interaction, player);
-        return;
-
-      case PanelButtonId.Shuffle:
-        if (player.isQueueEmpty()) {
-          throw new Error('not enough songs to shuffle');
-        }
-        player.shuffle();
-        await this.updateMessageFromInteraction(interaction, player);
-        return;
-
-      case PanelButtonId.Loop:
-        player.setLoopCurrentSong(!player.loopCurrentSong);
-        await this.updateMessageFromInteraction(interaction, player);
-        return;
-
-      case PanelButtonId.VolumeDown:
-        player.setVolume(Math.max(0, player.getVolume() - 5));
-        await this.updateMessageFromInteraction(interaction, player);
-        return;
-
-      case PanelButtonId.VolumeUp:
-        player.setVolume(Math.min(100, player.getVolume() + 5));
-        await this.updateMessageFromInteraction(interaction, player);
-        return;
-
-      case PanelButtonId.Search:
-        await interaction.showModal(buildPlayerPanelSearchModal());
-        return;
-
-      default:
-        return;
+    if (handler) {
+      await handler(interaction, player);
     }
   }
 

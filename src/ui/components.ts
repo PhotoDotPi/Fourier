@@ -68,6 +68,13 @@ const canGoForward = (player: Player) => (typeof player.canGoForward === 'functi
 const isQueueEmpty = (player: Player) => (typeof player.isQueueEmpty === 'function' ? player.isQueueEmpty() : false);
 const getVolume = (player: Player) => (typeof player.getVolume === 'function' ? player.getVolume() : 0);
 
+const buildLoopButton = (customId: string, player: Player) =>
+  new ButtonBuilder()
+    .setCustomId(customId)
+    .setEmoji(player.loopCurrentSong ? Emoji.RepeatOne : Emoji.RepeatAll)
+    .setLabel('Loop')
+    .setStyle(player.loopCurrentSong || player.loopCurrentQueue ? ButtonStyle.Success : ButtonStyle.Secondary);
+
 export const buildPlayerControls = (player: Player): Array<ActionRowBuilder<MessageActionRowComponentBuilder>> => {
   const playing = player.status === STATUS.PLAYING;
 
@@ -117,11 +124,7 @@ export const buildPlayerControls = (player: Player): Array<ActionRowBuilder<Mess
     .setStyle(ButtonStyle.Secondary)
     .setDisabled(isQueueEmpty(player));
 
-  const loopButton = new ButtonBuilder()
-    .setCustomId(PlayerButtonId.Loop)
-    .setEmoji(player.loopCurrentSong ? Emoji.RepeatOne : Emoji.RepeatAll)
-    .setLabel('Loop')
-    .setStyle(player.loopCurrentSong || player.loopCurrentQueue ? ButtonStyle.Success : ButtonStyle.Secondary);
+  const loopButton = buildLoopButton(PlayerButtonId.Loop, player);
 
   const volumeDownButton = new ButtonBuilder()
     .setCustomId(PlayerButtonId.VolumeDown)
@@ -307,11 +310,7 @@ export const buildPlayerPanelComponents = (
     .setStyle(ButtonStyle.Secondary)
     .setDisabled(isQueueEmpty(player));
 
-  const loopButton = new ButtonBuilder()
-    .setCustomId(PanelButtonId.Loop)
-    .setEmoji(player.loopCurrentSong ? Emoji.RepeatOne : Emoji.RepeatAll)
-    .setLabel('Loop')
-    .setStyle(player.loopCurrentSong || player.loopCurrentQueue ? ButtonStyle.Success : ButtonStyle.Secondary);
+  const loopButton = buildLoopButton(PanelButtonId.Loop, player);
 
   const volumeDownButton = new ButtonBuilder()
     .setCustomId(PanelButtonId.VolumeDown)

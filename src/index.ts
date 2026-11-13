@@ -6,20 +6,20 @@ import handleVoiceStateUpdate from './events/voiceStateUpdate.js';
 import prepareYtDlp from './utils/prepareYtDlp.js';
 
 const startBot = async () => {
-  const { config, client, bot, playerManager, commands, fileCache, playerPanelManager } = createApp();
+  const app = createApp();
 
-  await mkdir(config.DATA_DIR, { recursive: true });
-  await mkdir(config.CACHE_DIR, { recursive: true });
-  await mkdir(path.join(config.CACHE_DIR, 'tmp'), { recursive: true });
+  await mkdir(app.config.DATA_DIR, { recursive: true });
+  await mkdir(app.config.CACHE_DIR, { recursive: true });
+  await mkdir(path.join(app.config.CACHE_DIR, 'tmp'), { recursive: true });
 
-  await fileCache.cleanup();
-  await prepareYtDlp(config);
+  await app.fileCache.cleanup();
+  await prepareYtDlp(app.config);
 
-  const onGuildCreate = handleGuildCreate(config, client, commands);
-  const onVoiceStateUpdate = handleVoiceStateUpdate(playerManager);
-  const onReady = () => playerPanelManager.init();
+  const onGuildCreate = handleGuildCreate(app.config, app.client, app.commands);
+  const onVoiceStateUpdate = handleVoiceStateUpdate(app.playerManager);
+  const onReady = () => app.playerPanelManager.init();
 
-  await bot.register(commands, onGuildCreate, onVoiceStateUpdate, onReady);
+  await app.bot.register(app.commands, onGuildCreate, onVoiceStateUpdate, onReady);
 };
 
 export { startBot };

@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 
-export class ReadAfterDestroyedError extends Error {}
-export class ReadAfterReleasedError extends Error {}
+class ReadAfterDestroyedError extends Error {}
+class ReadAfterReleasedError extends Error {}
 
 interface FileCapacitorOptions {
   highWaterMark?: number;
@@ -13,7 +13,7 @@ interface FileCapacitorOptions {
   tmpdir?: string;
 }
 
-export class ReadStream extends Readable {
+class ReadStream extends Readable {
   private _pos = 0;
   private readonly _capacitor: WriteStream;
 
@@ -48,7 +48,7 @@ export class ReadStream extends Readable {
       return;
     }
 
-    const buffer = Buffer.allocUnsafe(n);
+    const buffer = Buffer.alloc(n);
     read(fd, buffer, 0, n, this._pos, (error, bytesRead) => {
       if (this.destroyed) {
         return;
@@ -232,10 +232,3 @@ export class WriteStream extends Writable {
     }
   }
 }
-
-export default {
-  WriteStream,
-  ReadStream,
-  ReadAfterDestroyedError,
-  ReadAfterReleasedError,
-};

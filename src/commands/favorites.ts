@@ -5,24 +5,21 @@ import * as favoritesRepo from '../db/repositories/favorites.js';
 import type AddQueryToQueue from '../services/addQueryToQueue.js';
 import { buildInfoEmbed, buildSuccessEmbed } from '../ui/embeds.js';
 import type Command from './index.js';
+import { addQueueOptions } from './playOptions.js';
 
 export default class Favorites implements Command {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('favorites')
     .setDescription('add a song to your favorites')
     .addSubcommand((subcommand) =>
-      subcommand
-        .setName('use')
-        .setDescription('use a favorite')
-        .addStringOption((option) =>
-          option.setName('name').setDescription('name of favorite').setRequired(true).setAutocomplete(true),
-        )
-        .addBooleanOption((option) => option.setName('immediate').setDescription('add track to the front of the queue'))
-        .addBooleanOption((option) =>
-          option.setName('shuffle').setDescription("shuffle the input if you're adding multiple tracks"),
-        )
-        .addBooleanOption((option) => option.setName('split').setDescription('if a track has chapters, split it'))
-        .addBooleanOption((option) => option.setName('skip').setDescription('skip the currently playing track')),
+      addQueueOptions(
+        subcommand
+          .setName('use')
+          .setDescription('use a favorite')
+          .addStringOption((option) =>
+            option.setName('name').setDescription('name of favorite').setRequired(true).setAutocomplete(true),
+          ),
+      ),
     )
     .addSubcommand((subcommand) => subcommand.setName('list').setDescription('list all favorites'))
     .addSubcommand((subcommand) =>
@@ -93,7 +90,7 @@ export default class Favorites implements Command {
     );
   }
 
-  private async use(interaction: ChatInputCommandInteraction) {
+  private async getFavoriteOrThrow(interaction: ChatInputCommandInteraction) {
     const name = interaction.options.getString('name')!.trim();
 
     const favorite = await favoritesRepo.findByGuildIdAndName(interaction.guild!.id, name);
@@ -101,6 +98,12 @@ export default class Favorites implements Command {
     if (!favorite) {
       throw new Error('no favorite with that name exists');
     }
+
+    return { favorite, name };
+  }
+
+  private async use(interaction: ChatInputCommandInteraction) {
+    const { favorite } = await this.getFavoriteOrThrow(interaction);
 
     await this.addQueryToQueue.addToQueue({
       interaction,
@@ -154,13 +157,7 @@ export default class Favorites implements Command {
   }
 
   private async remove(interaction: ChatInputCommandInteraction) {
-    const name = interaction.options.getString('name')!.trim();
-
-    const favorite = await favoritesRepo.findByGuildIdAndName(interaction.guild!.id, name);
-
-    if (!favorite) {
-      throw new Error('no favorite with that name exists');
-    }
+    const { favorite, name } = await this.getFavoriteOrThrow(interaction);
 
     const isUserGuildOwner = interaction.member!.user.id === interaction.guild!.ownerId;
 

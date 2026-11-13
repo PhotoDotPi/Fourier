@@ -27,7 +27,3 @@ export const colors = {
   brightCyan: wrap(96),
   brightWhite: wrap(97),
 } as const;
-
-export type ColorName = keyof typeof colors;
-
-export const paint = (name: ColorName, text: string): string => colors[name](text);

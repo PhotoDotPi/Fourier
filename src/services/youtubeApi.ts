@@ -80,6 +80,7 @@ export default class YoutubeAPI {
     }
     url.searchParams.set('key', this.youtubeKey);
 
+    // Outbound request targets the fixed YouTube Data API host.
     const response = await fetch(url.toString());
     if (!response.ok) {
       throw new Error(`YouTube API request failed (${response.status})`);
@@ -272,10 +273,19 @@ export default class YoutubeAPI {
   }
 
   private parseChaptersFromDescription(description: string, videoDurationSeconds: number) {
-    const chapters: Array<[string, { offset: number; length: number }]> = [];
+    const foundTimestamps = this.collectChapterTimestamps(description);
+
+    if (this.hasInvalidChapterSet(foundTimestamps, videoDurationSeconds)) {
+      return null;
+    }
+
+    return this.buildChapters(foundTimestamps, videoDurationSeconds);
+  }
+
+  private collectChapterTimestamps(description: string): Array<{ name: string; offset: number }> {
+    const foundTimestamps: Array<{ name: string; offset: number }> = [];
     let foundFirstTimestamp = false;
 
-    const foundTimestamps: Array<{ name: string; offset: number }> = [];
     for (const line of description.split('\n')) {
       const timestamps = Array.from(line.matchAll(/(?:\d+:)+\d+/g));
       if (timestamps?.length !== 1) {
@@ -297,22 +307,38 @@ export default class YoutubeAPI {
       foundTimestamps.push({ name: chapterName, offset: seconds });
     }
 
-    const hasInvalidChapter = foundTimestamps.some(
+    return foundTimestamps;
+  }
+
+  private hasInvalidChapterSet(
+    foundTimestamps: Array<{ name: string; offset: number }>,
+    videoDurationSeconds: number,
+  ): boolean {
+    if (foundTimestamps.length === 0) {
+      return true;
+    }
+
+    return foundTimestamps.some(
       ({ name, offset }, index) =>
         !name || offset >= videoDurationSeconds || (index > 0 && offset <= foundTimestamps[index - 1].offset),
     );
+  }
 
-    if (foundTimestamps.length === 0 || hasInvalidChapter) {
-      return null;
-    }
+  private buildChapters(
+    foundTimestamps: Array<{ name: string; offset: number }>,
+    videoDurationSeconds: number,
+  ): Array<[string, { offset: number; length: number }]> {
+    const chapters: Array<[string, { offset: number; length: number }]> = [];
 
-    for (const [i, { name, offset }] of foundTimestamps.entries()) {
+    for (const [index, { name, offset }] of foundTimestamps.entries()) {
       chapters.push([
         name,
         {
           offset,
           length:
-            i === foundTimestamps.length - 1 ? videoDurationSeconds - offset : foundTimestamps[i + 1].offset - offset,
+            index === foundTimestamps.length - 1
+              ? videoDurationSeconds - offset
+              : foundTimestamps[index + 1].offset - offset,
         },
       ]);
     }

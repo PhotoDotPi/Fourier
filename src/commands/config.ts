@@ -5,6 +5,84 @@ import { buildSuccessEmbed } from '../ui/embeds.js';
 import { getGuildSettings } from '../utils/getGuildSettings.js';
 import type Command from './index.js';
 
+type BooleanSettingKey =
+  | 'leaveIfNoListeners'
+  | 'queueAddResponseEphemeral'
+  | 'autoAnnounceNextSong'
+  | 'turnDownVolumeWhenPeopleSpeak';
+
+type IntegerSettingKey =
+  | 'playlistLimit'
+  | 'secondsToWaitAfterQueueEmpties'
+  | 'defaultVolume'
+  | 'defaultQueuePageSize'
+  | 'turnDownVolumeWhenPeopleSpeakTarget';
+
+interface BooleanSubcommand {
+  option: string;
+  setting: BooleanSettingKey;
+  message: string;
+}
+
+interface IntegerSubcommand {
+  option: string;
+  setting: IntegerSettingKey;
+  message: string;
+  minimum?: number;
+}
+
+const BOOLEAN_SUBCOMMANDS: Record<string, BooleanSubcommand> = {
+  'set-leave-if-no-listeners': {
+    option: 'value',
+    setting: 'leaveIfNoListeners',
+    message: 'Leave-if-no-listeners setting updated.',
+  },
+  'set-queue-add-response-hidden': {
+    option: 'value',
+    setting: 'queueAddResponseEphemeral',
+    message: 'Queue add notification setting updated.',
+  },
+  'set-auto-announce-next-song': {
+    option: 'value',
+    setting: 'autoAnnounceNextSong',
+    message: 'Auto-announce setting updated.',
+  },
+  'set-reduce-vol-when-voice': {
+    option: 'value',
+    setting: 'turnDownVolumeWhenPeopleSpeak',
+    message: 'Turn-down-volume setting updated.',
+  },
+};
+
+const INTEGER_SUBCOMMANDS: Record<string, IntegerSubcommand> = {
+  'set-playlist-limit': {
+    option: 'limit',
+    setting: 'playlistLimit',
+    message: 'Playlist limit updated.',
+    minimum: 1,
+  },
+  'set-wait-after-queue-empties': {
+    option: 'delay',
+    setting: 'secondsToWaitAfterQueueEmpties',
+    message: 'Wait delay updated.',
+  },
+  'set-default-volume': {
+    option: 'level',
+    setting: 'defaultVolume',
+    message: 'Volume setting updated.',
+  },
+  'set-default-queue-page-size': {
+    option: 'page-size',
+    setting: 'defaultQueuePageSize',
+    message: 'Default queue page size updated.',
+  },
+  'set-reduce-vol-when-voice-target': {
+    option: 'volume',
+    setting: 'turnDownVolumeWhenPeopleSpeakTarget',
+    message: 'Turn-down-volume target updated.',
+  },
+};
+
 export default class Config implements Command {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('config')
@@ -112,139 +190,89 @@ export default class Config implements Command {
   async execute(interaction: ChatInputCommandInteraction) {
     await getGuildSettings(interaction.guild!.id);
 
-    switch (interaction.options.getSubcommand()) {
-      case 'set-playlist-limit': {
-        const limit: number = interaction.options.getInteger('limit')!;
+    const subcommand = interaction.options.getSubcommand();
 
-        if (limit < 1) {
-          throw new Error('invalid limit');
-        }
-
-        await settingsRepo.updateSetting(interaction.guild!.id, { playlistLimit: limit });
-
-        await interaction.reply({ embeds: [buildSuccessEmbed('Playlist limit updated.')] });
-
-        break;
-      }
-
-      case 'set-wait-after-queue-empties': {
-        const delay = interaction.options.getInteger('delay')!;
-
-        await settingsRepo.updateSetting(interaction.guild!.id, {
-          secondsToWaitAfterQueueEmpties: delay,
-        });
-
-        await interaction.reply({ embeds: [buildSuccessEmbed('Wait delay updated.')] });
-
-        break;
-      }
-
-      case 'set-leave-if-no-listeners': {
-        const value = interaction.options.getBoolean('value')!;
-
-        await settingsRepo.updateSetting(interaction.guild!.id, { leaveIfNoListeners: value });
-
-        await interaction.reply({ embeds: [buildSuccessEmbed('Leave-if-no-listeners setting updated.')] });
-
-        break;
-      }
-
-      case 'set-queue-add-response-hidden': {
-        const value = interaction.options.getBoolean('value')!;
-
-        await settingsRepo.updateSetting(interaction.guild!.id, { queueAddResponseEphemeral: value });
-
-        await interaction.reply({ embeds: [buildSuccessEmbed('Queue add notification setting updated.')] });
-
-        break;
-      }
-
-      case 'set-auto-announce-next-song': {
-        const value = interaction.options.getBoolean('value')!;
-
-        await settingsRepo.updateSetting(interaction.guild!.id, { autoAnnounceNextSong: value });
-
-        await interaction.reply({ embeds: [buildSuccessEmbed('Auto-announce setting updated.')] });
-
-        break;
-      }
-
-      case 'set-default-volume': {
-        const value = interaction.options.getInteger('level')!;
-
-        await settingsRepo.updateSetting(interaction.guild!.id, { defaultVolume: value });
-
-        await interaction.reply({ embeds: [buildSuccessEmbed('Volume setting updated.')] });
-
-        break;
-      }
-
-      case 'set-default-queue-page-size': {
-        const value = interaction.options.getInteger('page-size')!;
-
-        await settingsRepo.updateSetting(interaction.guild!.id, { defaultQueuePageSize: value });
-
-        await interaction.reply({ embeds: [buildSuccessEmbed('Default queue page size updated.')] });
-
-        break;
-      }
-
-      case 'set-reduce-vol-when-voice': {
-        const value = interaction.options.getBoolean('value')!;
-
-        await settingsRepo.updateSetting(interaction.guild!.id, {
-          turnDownVolumeWhenPeopleSpeak: value,
-        });
-
-        await interaction.reply({ embeds: [buildSuccessEmbed('Turn-down-volume setting updated.')] });
-
-        break;
-      }
-
-      case 'set-reduce-vol-when-voice-target': {
-        const value = interaction.options.getInteger('volume')!;
-
-        await settingsRepo.updateSetting(interaction.guild!.id, {
-          turnDownVolumeWhenPeopleSpeakTarget: value,
-        });
-
-        await interaction.reply({ embeds: [buildSuccessEmbed('Turn-down-volume target updated.')] });
-
-        break;
-      }
-
-      case 'get': {
-        const embed = new EmbedBuilder().setTitle('Config');
-
-        const config = await getGuildSettings(interaction.guild!.id);
-
-        const settingsToShow = {
-          'Playlist Limit': config.playlistLimit,
-          'Wait before leaving after queue empty':
-            config.secondsToWaitAfterQueueEmpties === 0 ? 'never leave' : `${config.secondsToWaitAfterQueueEmpties}s`,
-          'Leave if there are no listeners': config.leaveIfNoListeners ? 'yes' : 'no',
-          'Auto announce next song in queue': config.autoAnnounceNextSong ? 'yes' : 'no',
-          'Add to queue responses show for requester only': config.queueAddResponseEphemeral ? 'yes' : 'no',
-          'Default Volume': config.defaultVolume,
-          'Default queue page size': config.defaultQueuePageSize,
-          'Reduce volume when people speak': config.turnDownVolumeWhenPeopleSpeak ? 'yes' : 'no',
-          'Reduce volume when people speak target': config.turnDownVolumeWhenPeopleSpeakTarget,
-        };
-
-        let description = '';
-        for (const [key, value] of Object.entries(settingsToShow)) {
-          description += `**${key}**: ${value}\n`;
-        }
-
-        embed.setDescription(description);
-
-        await interaction.reply({ embeds: [embed] });
-
-        break;
-      }
-
-      default:
-        throw new Error('unknown subcommand');
+    if (subcommand === 'get') {
+      await this.showSettings(interaction);
+      return;
     }
+
+    const booleanSubcommand = BOOLEAN_SUBCOMMANDS[subcommand];
+
+    if (booleanSubcommand) {
+      await this.applyBooleanSubcommand(interaction, booleanSubcommand);
+      return;
+    }
+
+    const integerSubcommand = INTEGER_SUBCOMMANDS[subcommand];
+
+    if (!integerSubcommand) {
+      throw new Error('unknown subcommand');
+    }
+
+    await this.applyIntegerSubcommand(interaction, integerSubcommand);
+  }
+
+  private async applyBooleanSubcommand(
+    interaction: ChatInputCommandInteraction,
+    subcommand: BooleanSubcommand,
+  ): Promise<void> {
+    const value = interaction.options.getBoolean(subcommand.option)!;
+    const data: Partial<Record<BooleanSettingKey, boolean>> = {};
+    data[subcommand.setting] = value;
+
+    await this.finishSettingUpdate(interaction, data, subcommand.message);
+  }
+
+  private async applyIntegerSubcommand(
+    interaction: ChatInputCommandInteraction,
+    subcommand: IntegerSubcommand,
+  ): Promise<void> {
+    const value = interaction.options.getInteger(subcommand.option)!;
+
+    if (subcommand.minimum !== undefined && value < subcommand.minimum) {
+      throw new Error('invalid limit');
+    }
+
+    const data: Partial<Record<IntegerSettingKey, number>> = {};
+    data[subcommand.setting] = value;
+
+    await this.finishSettingUpdate(interaction, data, subcommand.message);
+  }
+
+  private async finishSettingUpdate(
+    interaction: ChatInputCommandInteraction,
+    data: Partial<Record<string, number | boolean>>,
+    message: string,
+  ): Promise<void> {
+    await settingsRepo.updateSetting(interaction.guild!.id, data as Parameters<typeof settingsRepo.updateSetting>[1]);
+
+    await interaction.reply({ embeds: [buildSuccessEmbed(message)] });
+  }
+
+  private async showSettings(interaction: ChatInputCommandInteraction): Promise<void> {
+    const config = await getGuildSettings(interaction.guild!.id);
+
+    const settingsToShow = {
+      'Playlist Limit': config.playlistLimit,
+      'Wait before leaving after queue empty':
+        config.secondsToWaitAfterQueueEmpties === 0 ? 'never leave' : `${config.secondsToWaitAfterQueueEmpties}s`,
+      'Leave if there are no listeners': config.leaveIfNoListeners ? 'yes' : 'no',
+      'Auto announce next song in queue': config.autoAnnounceNextSong ? 'yes' : 'no',
+      'Add to queue responses show for requester only': config.queueAddResponseEphemeral ? 'yes' : 'no',
+      'Default Volume': config.defaultVolume,
+      'Default queue page size': config.defaultQueuePageSize,
+      'Reduce volume when people speak': config.turnDownVolumeWhenPeopleSpeak ? 'yes' : 'no',
+      'Reduce volume when people speak target': config.turnDownVolumeWhenPeopleSpeakTarget,
+    };
+
+    let description = '';
+    for (const [key, value] of Object.entries(settingsToShow)) {
+      description += `**${key}**: ${value}\n`;
+    }
+
+    const embed = new EmbedBuilder().setTitle('Config').setDescription(description);
+
+    await interaction.reply({ embeds: [embed] });
   }
 }

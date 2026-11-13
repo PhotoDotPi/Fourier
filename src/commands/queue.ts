@@ -1,11 +1,10 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import type { ButtonInteraction, ChatInputCommandInteraction, StringSelectMenuInteraction } from 'discord.js';
-import type PlayerManager from '../managers/player.js';
 import { buildPlayerControls, QueueButtonId } from '../ui/components.js';
 import { getQueueView } from '../ui/queueView.js';
 import { buildPlayingMessageEmbed } from '../utils/buildEmbed.js';
 import { getGuildSettings } from '../utils/getGuildSettings.js';
-import type Command from './index.js';
+import { PlayerCommand } from './playerCommand.js';
 
 const PAGE_OF_BUTTONS = ['queue:first', 'queue:last', 'queue:next', 'queue:previous'];
 
@@ -14,7 +13,7 @@ const getPageFromCustomId = (customId: string, fallback: number) => {
   return Number.isNaN(page) ? fallback : page;
 };
 
-export default class QueueCommand implements Command {
+export default class QueueCommand extends PlayerCommand {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('queue')
     .setDescription('show the current queue')
@@ -33,15 +32,9 @@ export default class QueueCommand implements Command {
   public readonly handledButtonIds = [QueueButtonId.NowPlaying, QueueButtonId.Shuffle, QueueButtonId.PageSelect];
   public readonly handledButtonIdPrefixes = PAGE_OF_BUTTONS;
 
-  private readonly playerManager: PlayerManager;
-
-  constructor(playerManager: PlayerManager) {
-    this.playerManager = playerManager;
-  }
-
   public async execute(interaction: ChatInputCommandInteraction) {
     const guildId = interaction.guild!.id;
-    const player = this.playerManager.get(guildId);
+    const player = this.getPlayer(interaction);
     const pageSize =
       interaction.options.getInteger('page-size') ?? (await getGuildSettings(guildId)).defaultQueuePageSize;
 
@@ -50,7 +43,7 @@ export default class QueueCommand implements Command {
 
   public async handleButtonInteraction(interaction: ButtonInteraction): Promise<void> {
     const guildId = interaction.guild!.id;
-    const player = this.playerManager.get(guildId);
+    const player = this.getPlayer(interaction);
     const pageSize = (await getGuildSettings(guildId)).defaultQueuePageSize;
     const currentPage = getPageFromCustomId(interaction.customId, 1);
     const maxPage = Math.max(1, Math.ceil(player.queueSize() / pageSize));
@@ -103,7 +96,7 @@ export default class QueueCommand implements Command {
 
   public async handleSelectMenuInteraction(interaction: StringSelectMenuInteraction): Promise<void> {
     const guildId = interaction.guild!.id;
-    const player = this.playerManager.get(guildId);
+    const player = this.getPlayer(interaction);
     const pageSize = (await getGuildSettings(guildId)).defaultQueuePageSize;
     const page = Number(interaction.values[0]);
 

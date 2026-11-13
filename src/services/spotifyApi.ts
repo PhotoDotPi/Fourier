@@ -26,10 +26,10 @@ export default class SpotifyAPI {
     const items = [...tracksResponse.items];
 
     while (tracksResponse.next) {
-      ({ body: tracksResponse } = await this.spotify.getAlbumTracks(uri.id, {
-        limit: parseInt(new URL(tracksResponse.next).searchParams.get('limit') ?? '50', 10),
-        offset: parseInt(new URL(tracksResponse.next).searchParams.get('offset') ?? '0', 10),
-      }));
+      ({ body: tracksResponse } = await this.spotify.getAlbumTracks(
+        uri.id,
+        this.getNextPageOptions(tracksResponse.next),
+      ));
 
       items.push(...tracksResponse.items);
     }
@@ -52,10 +52,10 @@ export default class SpotifyAPI {
     const playlist = { title: playlistResponse.name, source: playlistResponse.href };
 
     while (tracksResponse.next) {
-      ({ body: tracksResponse } = await this.spotify.getPlaylistTracks(uri.id, {
-        limit: parseInt(new URL(tracksResponse.next).searchParams.get('limit') ?? '50', 10),
-        offset: parseInt(new URL(tracksResponse.next).searchParams.get('offset') ?? '0', 10),
-      }));
+      ({ body: tracksResponse } = await this.spotify.getPlaylistTracks(
+        uri.id,
+        this.getNextPageOptions(tracksResponse.next),
+      ));
 
       items.push(...tracksResponse.items.map((playlistItem) => playlistItem.track));
     }
@@ -80,6 +80,15 @@ export default class SpotifyAPI {
     const { body } = await this.spotify.getArtistTopTracks(uri.id, 'US');
 
     return this.limitTracks(body.tracks, playlistLimit).map(this.toSpotifyTrack);
+  }
+
+  private getNextPageOptions(next: string) {
+    const params = new URL(next).searchParams;
+
+    return {
+      limit: parseInt(params.get('limit') ?? '50', 10),
+      offset: parseInt(params.get('offset') ?? '0', 10),
+    };
   }
 
   private toSpotifyTrack(track: SpotifyApi.TrackObjectSimplified): SpotifyTrack {

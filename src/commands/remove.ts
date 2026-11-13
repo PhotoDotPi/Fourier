@@ -1,10 +1,9 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import type { ChatInputCommandInteraction } from 'discord.js';
-import type PlayerManager from '../managers/player.js';
 import { buildSuccessEmbed } from '../ui/embeds.js';
-import type Command from './index.js';
+import { PlayerCommand } from './playerCommand.js';
 
-export default class Remove implements Command {
+export default class Remove extends PlayerCommand {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('remove')
     .setDescription('remove songs from the queue')
@@ -23,14 +22,8 @@ export default class Remove implements Command {
         .setRequired(false),
     );
 
-  private readonly playerManager: PlayerManager;
-
-  constructor(playerManager: PlayerManager) {
-    this.playerManager = playerManager;
-  }
-
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {
-    const player = this.playerManager.get(interaction.guild!.id);
+    const player = this.getPlayer(interaction);
 
     const position = interaction.options.getInteger('position') ?? 1;
     const range = interaction.options.getInteger('range') ?? 1;

@@ -1,12 +1,10 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import type { ChatInputCommandInteraction } from 'discord.js';
-import type PlayerManager from '../managers/player.js';
-import { buildSeekToolbar } from '../ui/components.js';
-import { buildSeekEmbed } from '../utils/buildEmbed.js';
 import durationStringToSeconds from '../utils/durationStringToSeconds.js';
-import type Command from './index.js';
+import { VoicePlayerCommand } from './playerCommand.js';
+import { getSeekableSong, seekAndReply } from './seekSupport.js';
 
-export default class ForwardSeek implements Command {
+export default class ForwardSeek extends VoicePlayerCommand {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('fseek')
     .setDescription('seek forward in the current song')
@@ -17,26 +15,9 @@ export default class ForwardSeek implements Command {
         .setRequired(true),
     );
 
-  public requiresVC = true;
-
-  private readonly playerManager: PlayerManager;
-
-  constructor(playerManager: PlayerManager) {
-    this.playerManager = playerManager;
-  }
-
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {
-    const player = this.playerManager.get(interaction.guild!.id);
-
-    const currentSong = player.getCurrent();
-
-    if (!currentSong) {
-      throw new Error('nothing is playing');
-    }
-
-    if (currentSong.isLive) {
-      throw new Error("can't seek in a livestream");
-    }
+    const player = this.getPlayer(interaction);
+    const currentSong = getSeekableSong(player, "can't seek in a livestream");
 
     const seekValue = interaction.options.getString('time');
 
@@ -54,11 +35,6 @@ export default class ForwardSeek implements Command {
       throw new Error("can't seek past the end of the song");
     }
 
-    await Promise.all([player.forwardSeek(seekTime), interaction.deferReply()]);
-
-    await interaction.editReply({
-      embeds: [buildSeekEmbed(player)],
-      components: buildSeekToolbar(),
-    });
+    await seekAndReply(interaction, () => player.forwardSeek(seekTime), player);
   }
 }

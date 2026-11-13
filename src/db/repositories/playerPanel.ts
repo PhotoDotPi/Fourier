@@ -1,11 +1,6 @@
 import { sql } from '../client.js';
 import type { PlayerPanelRow } from '../types.js';
 
-export async function findByGuildId(guildId: string): Promise<PlayerPanelRow | null> {
-  const rows = await sql`SELECT * FROM "PlayerPanel" WHERE "guildId" = ${guildId}`;
-  return (rows[0] as PlayerPanelRow | undefined) ?? null;
-}
-
 export async function upsert(guildId: string, channelId: string, messageId: string | null): Promise<PlayerPanelRow> {
   const rows = await sql`
     INSERT INTO "PlayerPanel" ("guildId", "channelId", "messageId")

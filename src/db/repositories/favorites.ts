@@ -10,11 +10,6 @@ export async function findByGuildIdAndName(guildId: string, name: string): Promi
   return (rows[0] as FavoriteQueryRow | undefined) ?? null;
 }
 
-export async function findById(id: number): Promise<FavoriteQueryRow | null> {
-  const rows = await sql`SELECT * FROM "FavoriteQuery" WHERE "id" = ${id}`;
-  return (rows[0] as FavoriteQueryRow | undefined) ?? null;
-}
-
 export async function createFavorite(guildId: string, authorId: string, name: string, query: string): Promise<void> {
   await sql`
     INSERT INTO "FavoriteQuery" ("guildId", "authorId", "name", "query")

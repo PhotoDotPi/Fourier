@@ -1,26 +1,14 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import type { ChatInputCommandInteraction, GuildMember } from 'discord.js';
-import type PlayerManager from '../managers/player.js';
-import type NowPlayingPresenter from '../services/nowPlayingPresenter.js';
 import { STATUS } from '../services/player.js';
 import { getMemberVoiceChannel, getMostPopularVoiceChannel } from '../utils/channels.js';
-import type Command from './index.js';
+import { VoicePresenterPlayerCommand } from './playerCommand.js';
 
-export default class Resume implements Command {
+export default class Resume extends VoicePresenterPlayerCommand {
   public readonly slashCommand = new SlashCommandBuilder().setName('resume').setDescription('resume playback');
 
-  public requiresVC = true;
-
-  private readonly playerManager: PlayerManager;
-  private readonly presenter: NowPlayingPresenter;
-
-  constructor(playerManager: PlayerManager, presenter: NowPlayingPresenter) {
-    this.playerManager = playerManager;
-    this.presenter = presenter;
-  }
-
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {
-    const player = this.playerManager.get(interaction.guild!.id);
+    const player = this.getPlayer(interaction);
     const [targetVoiceChannel] =
       getMemberVoiceChannel(interaction.member as GuildMember) ?? getMostPopularVoiceChannel(interaction.guild!);
     if (player.status === STATUS.PLAYING) {

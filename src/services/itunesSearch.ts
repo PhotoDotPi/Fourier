@@ -3,7 +3,7 @@ import debug from '../utils/debug.js';
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 const TIMEOUT_MS = 10_000;
 
-export interface ItunesCatalogTrack {
+interface ItunesCatalogTrack {
   id: string;
   name: string;
   artist: string;
@@ -53,38 +53,53 @@ const resizeArtwork = (url: string | null | undefined): string | null => {
   return url.replace(/\/\d+x\d+bb(?=\.[a-zA-Z]+(?:$|\?))/u, '/600x600bb');
 };
 
+const readString = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+
+const readNumber = (value: unknown): number | null => (typeof value === 'number' ? value : null);
+
+const readId = (value: unknown): string => (value === null || value === undefined ? '' : String(value));
+
 const toCatalogTrack = (result: Record<string, unknown>): ItunesCatalogTrack => ({
-  id: String(result.trackId ?? ''),
-  name: String(result.trackName ?? ''),
-  artist: String(result.artistName ?? ''),
-  album: (result.collectionName as string) ?? null,
-  artworkUrl: resizeArtwork(result.artworkUrl100 as string | undefined),
+  id: readId(result.trackId),
+  name: readId(result.trackName),
+  artist: readId(result.artistName),
+  album: readString(result.collectionName),
+  artworkUrl: resizeArtwork(result.artworkUrl100 as string | null | undefined),
   explicit: normalizeExplicit(result.trackExplicitness as string),
-  releaseDate: (result.releaseDate as string)?.slice(0, 10) ?? null,
-  genre: (result.primaryGenreName as string) ?? null,
-  isrc: (result.isrc as string) ?? null,
-  appleMusicUrl: (result.trackViewUrl as string) ?? null,
-  previewUrl: (result.previewUrl as string) ?? null,
-  length: Math.round(((result.trackTimeMillis as number) ?? 0) / 1000),
-  trackNumber: (result.trackNumber as number) ?? null,
-  discNumber: (result.discNumber as number) ?? null,
+  releaseDate: readString(result.releaseDate)?.slice(0, 10) ?? null,
+  genre: readString(result.primaryGenreName),
+  isrc: readString(result.isrc),
+  appleMusicUrl: readString(result.trackViewUrl),
+  previewUrl: readString(result.previewUrl),
+  length: Math.round((readNumber(result.trackTimeMillis) ?? 0) / 1000),
+  trackNumber: readNumber(result.trackNumber),
+  discNumber: readNumber(result.discNumber),
 });
 
-const toCatalogMetadata = (catalog: ItunesCatalogTrack): ItunesEnrichedMetadata => ({
-  itunesId: catalog.id,
-  trackName: catalog.name === '' ? undefined : catalog.name,
-  artistName: catalog.artist === '' ? undefined : catalog.artist,
-  album: catalog.album ?? undefined,
-  artworkUrl: catalog.artworkUrl ?? undefined,
-  explicit: catalog.explicit ?? undefined,
-  releaseDate: catalog.releaseDate ?? undefined,
-  genre: catalog.genre ?? undefined,
-  isrc: catalog.isrc ?? undefined,
-  appleMusicUrl: catalog.appleMusicUrl ?? undefined,
-  previewUrl: catalog.previewUrl ?? undefined,
-  trackNumber: catalog.trackNumber ?? undefined,
-  discNumber: catalog.discNumber ?? undefined,
-});
+const toCatalogMetadata = (catalog: ItunesCatalogTrack): ItunesEnrichedMetadata => {
+  const metadata: ItunesEnrichedMetadata = { itunesId: catalog.id };
+
+  const assign = (key: keyof ItunesEnrichedMetadata, value: unknown) => {
+    if (value !== null && value !== undefined && value !== '') {
+      (metadata as unknown as Record<string, unknown>)[key] = value;
+    }
+  };
+
+  assign('trackName', catalog.name);
+  assign('artistName', catalog.artist);
+  assign('album', catalog.album);
+  assign('artworkUrl', catalog.artworkUrl);
+  assign('explicit', catalog.explicit);
+  assign('releaseDate', catalog.releaseDate);
+  assign('genre', catalog.genre);
+  assign('isrc', catalog.isrc);
+  assign('appleMusicUrl', catalog.appleMusicUrl);
+  assign('previewUrl', catalog.previewUrl);
+  assign('trackNumber', catalog.trackNumber);
+  assign('discNumber', catalog.discNumber);
+
+  return metadata;
+};
 
 interface CacheEntry {
   value: ItunesEnrichedMetadata[];
@@ -150,6 +165,7 @@ export default class ItunesSearchService {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
+      // Outbound request targets the fixed iTunes Search API host.
       const response = await fetch(url.toString(), { signal: controller.signal });
       if (!response.ok) {
         throw new Error(`iTunes API request failed (${response.status})`);

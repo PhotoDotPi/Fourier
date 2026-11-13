@@ -161,7 +161,7 @@ reviews:
   pre_merge_checks:
     title:
       mode: 'warning'
-      requirements: 'Use an imperative, sentence-case title under 72 characters, e.g. "Skip unplayable tracks instead of stalling the player".'
+      requirements: 'Use a Conventional Commits title under 72 characters, e.g. "fix(player): skip unplayable tracks instead of stalling".'
     description:
       mode: 'warning'
     issue_assessment:

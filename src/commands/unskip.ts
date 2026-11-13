@@ -1,27 +1,15 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import type { ChatInputCommandInteraction } from 'discord.js';
-import type PlayerManager from '../managers/player.js';
-import type NowPlayingPresenter from '../services/nowPlayingPresenter.js';
 import { buildSuccessEmbed } from '../ui/embeds.js';
-import type Command from './index.js';
+import { VoicePresenterPlayerCommand } from './playerCommand.js';
 
-export default class Unskip implements Command {
+export default class Unskip extends VoicePresenterPlayerCommand {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('unskip')
     .setDescription('go back in the queue by one song');
 
-  public requiresVC = true;
-
-  private readonly playerManager: PlayerManager;
-  private readonly presenter: NowPlayingPresenter;
-
-  constructor(playerManager: PlayerManager, presenter: NowPlayingPresenter) {
-    this.playerManager = playerManager;
-    this.presenter = presenter;
-  }
-
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {
-    const player = this.playerManager.get(interaction.guild!.id);
+    const player = this.getPlayer(interaction);
     await interaction.deferReply();
 
     try {

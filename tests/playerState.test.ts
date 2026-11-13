@@ -130,7 +130,6 @@ const getPrivateState = (player: Player) =>
     audioResource: { sourceStream?: Readable; volume: { setVolume: ReturnType<typeof vi.fn> } } | null;
     channelToSpeakingUsers: Map<string, Set<string>>;
     currentChannel: object | undefined;
-    currentQueueEntryVersion: number;
     finishQueue(): Promise<void>;
     nowPlaying: QueuedSong | null;
     nowPlayingQueueEntryVersion: number | null;
@@ -401,7 +400,6 @@ describe('Player forward state transitions', () => {
     const state = getPrivateState(player);
     expect(player.getCurrent()).toBe(newerDestination);
     expect(player.getCurrentQueueEntryId()).toBe(newerEntryId as number);
-    expect(state.currentQueueEntryVersion as number).toBe(newerEntryId as number);
     expect(player.status as STATUS).toBe(STATUS.PLAYING);
     expect(state.nowPlaying).toBe(newerDestination);
     expect(state.nowPlayingQueueEntryVersion).toBe(newerEntryId as number);
@@ -444,7 +442,6 @@ describe('Player forward state transitions', () => {
     const state = getPrivateState(player);
     expect(player.getCurrent()).toBe(newerDestination);
     expect(player.getCurrentQueueEntryId()).toBe(newerEntryId as number);
-    expect(state.currentQueueEntryVersion as number).toBe(newerEntryId as number);
     expect(player.status as STATUS).toBe(STATUS.PLAYING);
     expect(state.nowPlaying).toBe(newerDestination);
     expect(state.nowPlayingQueueEntryVersion).toBe(newerEntryId as number);
@@ -743,7 +740,6 @@ describe('Player age-restricted fallback preservation', () => {
     const state = getPrivateState(player);
     expect(player.getCurrent()).toBe(loopedSong);
     expect(player.getCurrentQueueEntryId()).toBe(loopedEntryId as number);
-    expect(state.currentQueueEntryVersion as number).toBe(loopedEntryId as number);
     expect(player.status as STATUS).toBe(STATUS.PAUSED);
     expect(state.nowPlaying).toBeNull();
     expect(state.nowPlayingQueueEntryVersion).toBeNull();

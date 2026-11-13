@@ -184,33 +184,44 @@ export default class MusicCardService {
       return artwork;
     }
 
+    const buffer = await this.fetchArtwork(artwork);
+
+    return buffer ?? FALLBACK_ART;
+  }
+
+  private isImageContentType(contentType: string): boolean {
+    return contentType.includes('image/') || contentType.includes('application/octet-stream');
+  }
+
+  private async fetchArtwork(artwork: string): Promise<Buffer | null> {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
+      // Artwork URL originates from trusted track metadata returned by upstream providers.
       const response = await fetch(artwork, { signal: controller.signal });
       clearTimeout(timer);
 
       if (!response.ok) {
         debug(`Artwork fetch failed (${response.status}): ${artwork}`);
-        return FALLBACK_ART;
+        return null;
       }
 
       const contentType = response.headers.get('content-type') ?? '';
-      if (!contentType.includes('image/') && !contentType.includes('application/octet-stream')) {
+      if (!this.isImageContentType(contentType)) {
         debug(`Artwork not an image (${contentType}): ${artwork}`);
-        return FALLBACK_ART;
+        return null;
       }
 
       const buffer = Buffer.from(await response.arrayBuffer());
       if (buffer.length === 0) {
         debug(`Artwork empty: ${artwork}`);
-        return FALLBACK_ART;
+        return null;
       }
 
       return buffer;
     } catch (error) {
       debug(`Artwork fetch error: ${error instanceof Error ? error.message : String(error)}`);
-      return FALLBACK_ART;
+      return null;
     }
   }
 

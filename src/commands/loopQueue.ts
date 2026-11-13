@@ -1,25 +1,16 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import type { ChatInputCommandInteraction } from 'discord.js';
-import type PlayerManager from '../managers/player.js';
 import { STATUS } from '../services/player.js';
 import { buildSuccessEmbed } from '../ui/embeds.js';
-import type Command from './index.js';
+import { VoicePlayerCommand } from './playerCommand.js';
 
-export default class LoopQueue implements Command {
+export default class LoopQueue extends VoicePlayerCommand {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('loop-queue')
     .setDescription('toggle looping the entire queue');
 
-  public requiresVC = true;
-
-  private readonly playerManager: PlayerManager;
-
-  constructor(playerManager: PlayerManager) {
-    this.playerManager = playerManager;
-  }
-
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {
-    const player = this.playerManager.get(interaction.guild!.id);
+    const player = this.getPlayer(interaction);
 
     if (player.status === STATUS.IDLE) {
       throw new Error('no songs to loop!');

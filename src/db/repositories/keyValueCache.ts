@@ -20,7 +20,3 @@ export async function upsertKeyValue(key: string, value: string, expiresAt: Date
 export async function deleteByKey(key: string): Promise<void> {
   await sql`DELETE FROM "KeyValueCache" WHERE "key" = ${key}`;
 }
-
-export async function deleteAll(): Promise<void> {
-  await sql`DELETE FROM "KeyValueCache"`;
-}
