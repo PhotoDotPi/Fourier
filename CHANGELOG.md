@@ -5,6 +5,15 @@ All notable changes to Fourier are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/PhotoDotPi/Fourier/compare/v1.0.1...v1.1.0) (2026-11-15)
+
+
+### Features
+
+* add PlaybackBackend interface and put local pipeline behind it ([#13](https://github.com/PhotoDotPi/Fourier/issues/13)) ([#18](https://github.com/PhotoDotPi/Fourier/issues/18)) ([3fd782b](https://github.com/PhotoDotPi/Fourier/commit/3fd782bd55072d4d8a16521d1e2943924c9726bd))
+* implement Lavalink backend with Shoukaku ([#14](https://github.com/PhotoDotPi/Fourier/issues/14)) ([#20](https://github.com/PhotoDotPi/Fourier/issues/20)) ([819699e](https://github.com/PhotoDotPi/Fourier/commit/819699e6e55323908efd591e7061e81dee49e336))
+* make Lavalink default with automatic local fallback ([#15](https://github.com/PhotoDotPi/Fourier/issues/15)) ([#21](https://github.com/PhotoDotPi/Fourier/issues/21)) ([83b982e](https://github.com/PhotoDotPi/Fourier/commit/83b982ed64dcceffa5093aeab15910f1a4d33d9d))
+
 ## [1.0.1](https://github.com/PhotoDotPi/Fourier/compare/v1.0.0...v1.0.1) (2026-11-12)
 
 
