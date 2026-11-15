@@ -384,3 +384,8 @@ Fourier contains code derived from [Muse](https://github.com/museofficial/muse) 
 was distributed under the [MIT License](LICENSE-MIT). Copyright (c) 2020 Max Isom. That code remains
 MIT-licensed and retains its original copyright notice; see [LICENSE-MIT](LICENSE-MIT) and
 [NOTICE](NOTICE).
+
+## Lavalink (preferred player)
+
+Set LAVALINK_NODES to use Lavalink via Shoukaku; leave unset/empty for the local yt-dlp + ffmpeg pipeline. If nodes are configured but none connect, the bot logs once and uses local. Per-guild fallback occurs on node failure, track exception or stuck. Voice ducking is local-only. Audio cache (FileCacheProvider) is skipped on the Lavalink path.
+

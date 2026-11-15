@@ -125,6 +125,44 @@ export default class Player extends EventEmitter implements PlaybackBackend {
           service: this.lavalinkService!,
           getCurrent: () => this.getCurrent(),
           getCurrentEntryId: () => this.getCurrentQueueEntryId(),
+          onTrackStart: (song) => {
+            this.nowPlaying = song;
+            this.nowPlayingQueueEntryVersion = this.getCurrentQueueEntryId();
+            this.status = STATUS.PLAYING;
+            this.emit('trackStart' as PlayerEventName, song);
+          },
+          onTrackEnd: (song, reason) => {
+            if (reason === 'finished') {
+              if (this.loopCurrentSong && song) {
+                void this.seek(0);
+                return;
+              }
+              if (this.loopCurrentQueue && song) {
+                this.add(song);
+              }
+              void this.advanceToNextTrack();
+            }
+          },
+          onTrackException: (_song, error) => {
+            this.lavalinkService?.markGuildFallback(this.guildId, error.message);
+            // fall back to local for this track
+            if (this.currentChannel) {
+              void this.fallbackToLocalMidTrack();
+            }
+          },
+          onTrackStuck: (_song, thresholdMs) => {
+            this.lavalinkService?.markGuildFallback(this.guildId, `stuck ${thresholdMs}ms`);
+            if (this.currentChannel) {
+              void this.fallbackToLocalMidTrack();
+            }
+          },
+        });
+
+        this.lavalinkBackend.on('nodeDisconnected', () => {
+          this.lavalinkService?.markGuildFallback(this.guildId, 'node disconnected');
+          if (this.currentChannel) {
+            void this.fallbackToLocalMidTrack();
+          }
         });
       }
 
@@ -285,7 +323,10 @@ export default class Player extends EventEmitter implements PlaybackBackend {
           throw new Error('Lavalink backend unavailable');
         }
         await this.lavalinkBackend.play();
-        this.lavalinkService?.lavalinkPlayCount && void 0;
+        this.lavalinkService?.recordSuccess();
+        this.status = STATUS.PLAYING;
+        this.nowPlaying = this.getCurrent();
+        this.emit('trackStart' as PlayerEventName, this.nowPlaying!);
         return;
       } catch (error: unknown) {
         this.lavalinkService?.markGuildFallback(this.guildId, error instanceof Error ? error.message : 'play failed');
@@ -298,6 +339,34 @@ export default class Player extends EventEmitter implements PlaybackBackend {
 
     const attempt = this.playbackAttempts.begin();
     await this.playWithAttempt(attempt, allowAgeRestrictedFallback);
+  }
+
+  private async fallbackToLocalMidTrack(): Promise<void> {
+    if (!this.currentChannel) {
+      return;
+    }
+    const channel = this.currentChannel;
+    const song = this.getCurrent();
+    const position = this.getPosition();
+
+    if (this.lavalinkBackend) {
+      this.lavalinkBackend.disconnect();
+      this.lavalinkBackend = null;
+    }
+
+    this.forceLocal = true;
+    try {
+      await this.connect(channel);
+      if (song) {
+        this.add(song);
+      }
+      await this.play();
+      if (position > 0) {
+        await this.seek(position);
+      }
+    } finally {
+      this.forceLocal = false;
+    }
   }
 
   private forceLocal = false;
@@ -520,6 +589,23 @@ export default class Player extends EventEmitter implements PlaybackBackend {
   add(song: QueuedSong, options?: { immediate?: boolean; immediateOffset?: number }): void {
     this.queue.add(song, options);
     this.emit('queueChange' as PlayerEventName);
+  }
+
+  async prepareSongsForBackend(songs: SongMetadata[]): Promise<void> {
+    if (!this.lavalinkService?.shouldUseLavalink(this.guildId)) {
+      return;
+    }
+    await Promise.all(
+      songs.map(async (song) => {
+        if (song.encodedTrack) {
+          return;
+        }
+        const encoded = await this.lavalinkService!.resolveEncoded(song as QueuedSong);
+        if (encoded) {
+          song.encodedTrack = encoded;
+        }
+      }),
+    );
   }
 
   shuffle(): void {

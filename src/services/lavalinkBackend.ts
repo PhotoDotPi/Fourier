@@ -48,6 +48,8 @@ export default class LavalinkBackend extends EventEmitter implements PlaybackBac
   private positionStartedAt = 0;
   private paused = false;
   private lastPlayerUpdateAt = 0;
+  private outroTimer: ReturnType<typeof setTimeout> | null = null;
+  private intentionalStop = false;
 
   constructor(options: LavalinkBackendOptions) {
     super();
@@ -110,6 +112,14 @@ export default class LavalinkBackend extends EventEmitter implements PlaybackBac
     if (startSeconds > 0) {
       await this.player.seekTo(startSeconds * 1000);
     }
+
+    if (!song.isLive && song.length > 0) {
+      this.outroTimer = setTimeout(() => {
+        this.intentionalStop = true;
+        void this.player?.stopTrack();
+      }, song.length * 1000);
+    }
+
     if (song.isLive) {
       // live: no length/seek beyond start
     }
@@ -204,13 +214,20 @@ export default class LavalinkBackend extends EventEmitter implements PlaybackBac
     player.on('end', (event) => {
       const reason = event.reason as 'finished' | 'stopped' | 'replaced' | 'loadFailed' | 'cleanup';
       const song = this.currentSong;
-      if (reason === 'finished') {
+      if (this.outroTimer) {
+        clearTimeout(this.outroTimer);
+        this.outroTimer = null;
+      }
+      if (reason === 'finished' || (reason === 'stopped' && this.intentionalStop)) {
+        this.intentionalStop = false;
         this.status = STATUS.IDLE;
-        this.emit('trackEnd', song, reason);
-        this.callbacks.onTrackEnd?.(song, reason);
-      } else if (reason === 'loadFailed') {
+        this.emit('trackEnd', song, 'finished');
+        this.callbacks.onTrackEnd?.(song, 'finished');
+      } else if (reason === 'loadFailed' || reason === ('stuck' as never)) {
         this.emit('trackException', song, new Error('Lavalink track failed to load'));
         this.callbacks.onTrackException?.(song, new Error('Lavalink track failed to load'));
+      } else if (reason === 'stopped' || reason === 'replaced' || reason === 'cleanup') {
+        // initiated by us or node; do not advance queue
       }
     });
     player.on('exception', (event) => {

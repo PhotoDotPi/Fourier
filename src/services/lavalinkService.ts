@@ -132,6 +132,10 @@ export default class LavalinkService {
     }
   }
 
+  recordSuccess(): void {
+    this.consecutiveFailures = 0;
+  }
+
   isGuildFallback(guildId: string): boolean {
     const until = this.guildFallbackUntil.get(guildId);
     if (!until) {
