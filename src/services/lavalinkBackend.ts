@@ -71,9 +71,14 @@ export default class LavalinkBackend extends EventEmitter implements PlaybackBac
     this.player = player;
     this.wirePlayer(player);
     this.status = STATUS.PAUSED;
+    this.lastPlayerUpdateAt = Date.now();
   }
 
   disconnect(): void {
+    if (this.outroTimer) {
+      clearTimeout(this.outroTimer);
+      this.outroTimer = null;
+    }
     this.player = null;
     this.status = STATUS.IDLE;
     void this.service.leaveVoiceChannel(this.guildId);
@@ -107,6 +112,10 @@ export default class LavalinkBackend extends EventEmitter implements PlaybackBac
       throw new Error('No encoded track available for Lavalink');
     }
 
+    if (this.outroTimer) {
+      clearTimeout(this.outroTimer);
+      this.outroTimer = null;
+    }
     const startSeconds = song.offset ?? 0;
     await this.player.playTrack({ track: { encoded } }, false);
     if (startSeconds > 0) {
@@ -119,6 +128,10 @@ export default class LavalinkBackend extends EventEmitter implements PlaybackBac
         void this.player?.stopTrack();
       }, song.length * 1000);
     }
+
+    this.position = startSeconds;
+    this.positionStartedAt = Date.now();
+    this.lastPlayerUpdateAt = Date.now();
 
     if (song.isLive) {
       // live: no length/seek beyond start
@@ -148,10 +161,13 @@ export default class LavalinkBackend extends EventEmitter implements PlaybackBac
     if (this.status !== STATUS.PAUSED) {
       return;
     }
+    this.position = this.getPosition();
     this.positionStartedAt = Date.now();
+    this.lastPlayerUpdateAt = Date.now();
     this.paused = false;
     this.status = STATUS.PLAYING;
     void this.player?.setPaused(false);
+    this.emit('statusChange', STATUS.PAUSED, this.status);
     if (this.currentSong) {
       this.emit('trackStart', this.currentSong);
     }
@@ -168,6 +184,7 @@ export default class LavalinkBackend extends EventEmitter implements PlaybackBac
     await this.player.seekTo(target * 1000);
     this.position = target;
     this.positionStartedAt = Date.now();
+    this.lastPlayerUpdateAt = Date.now();
   }
 
   setVolume(level: number): void {
@@ -186,9 +203,8 @@ export default class LavalinkBackend extends EventEmitter implements PlaybackBac
     if (this.paused) {
       return this.position;
     }
-    const base = this.player.position ?? this.position * 1000;
-    const delta = Math.floor((Date.now() - this.lastPlayerUpdateAt) / 1000);
-    const seconds = Math.floor(base / 1000) + (this.lastPlayerUpdateAt ? delta : 0);
+    const delta = this.lastPlayerUpdateAt ? Math.floor((Date.now() - this.lastPlayerUpdateAt) / 1000) : 0;
+    const seconds = this.position + delta;
     return Math.min(seconds, this.currentSong?.length ?? seconds);
   }
 
@@ -209,9 +225,10 @@ export default class LavalinkBackend extends EventEmitter implements PlaybackBac
       this.lastPlayerUpdateAt = Date.now();
       this.positionStartedAt = Date.now();
       this.position = 0;
+      this.paused = false;
       this.emit('trackStart', this.currentSong ?? this.getCurrentSong());
     });
-    player.on('end', (event) => {
+    player.on('end', (event: { reason: string }) => {
       const reason = event.reason as 'finished' | 'stopped' | 'replaced' | 'loadFailed' | 'cleanup';
       const song = this.currentSong;
       if (this.outroTimer) {
@@ -223,32 +240,38 @@ export default class LavalinkBackend extends EventEmitter implements PlaybackBac
         this.status = STATUS.IDLE;
         this.emit('trackEnd', song, 'finished');
         this.callbacks.onTrackEnd?.(song, 'finished');
-      } else if (reason === 'loadFailed' || reason === ('stuck' as never)) {
-        this.emit('trackException', song, new Error('Lavalink track failed to load'));
-        this.callbacks.onTrackException?.(song, new Error('Lavalink track failed to load'));
+      } else if (reason === 'loadFailed') {
+        const error = new Error('Lavalink track failed to load');
+        this.emit('trackException', song, error);
+        this.callbacks.onTrackException?.(song, error);
       } else if (reason === 'stopped' || reason === 'replaced' || reason === 'cleanup') {
-        // initiated by us or node; do not advance queue
+        this.status = STATUS.IDLE;
+        this.emit('trackEnd', song, reason);
+        this.callbacks.onTrackEnd?.(song, reason);
       }
     });
-    player.on('exception', (event) => {
+    player.on('exception', (event: { exception: { message: string } }) => {
       const song = this.currentSong;
       const error = new Error(event.exception.message);
       this.emit('trackException', song, error);
       this.callbacks.onTrackException?.(song, error);
     });
-    player.on('stuck', (event) => {
+    player.on('stuck', (event: { thresholdMs: number }) => {
       const song = this.currentSong;
       this.emit('trackStuck', song, event.thresholdMs);
       this.callbacks.onTrackStuck?.(song, event.thresholdMs);
     });
-    player.on('update', (event) => {
+    player.on('update', (event: { state: { position: number } }) => {
       this.lastPlayerUpdateAt = Date.now();
       this.position = Math.floor(event.state.position / 1000);
     });
     player.on('closed', () => {
-      this.service.markGuildFallback?.(this.guildId, 'node closed');
+      if (this.outroTimer) {
+        clearTimeout(this.outroTimer);
+        this.outroTimer = null;
+      }
+      this.status = STATUS.IDLE;
       this.emit('nodeDisconnected');
-      this.callbacks.onTrackEnd?.(this.currentSong, 'loadFailed');
     });
   }
 }

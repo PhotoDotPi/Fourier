@@ -20,7 +20,8 @@
 ## What is Fourier?
 
 Fourier is a Discord music bot that runs as a single [Bun](https://bun.sh) process on a machine you
-control. It streams audio into voice channels through `yt-dlp` → `ffmpeg` → `@discordjs/voice`, and
+control. It streams audio into voice channels through either a Lavalink node (default when configured) or the
+local `yt-dlp` → `ffmpeg` → `@discordjs/voice` pipeline, and
 stores settings, favorites, player panels, and caches in a [Neon PostgreSQL](https://neon.tech)
 database that belongs to you.
 
@@ -56,8 +57,7 @@ manners.
 - Absolute and relative seeking (`/seek`, `/fseek`; `1m 30s` is accepted)
 - YouTube chapters as individual queue entries (opt-in with `/play split:*`)
 - Track and queue looping, `/replay`, `/unskip`, volume from 0 to 100
-- Automatic ducking: music lowers while people speak
-- Optional SponsorBlock skipping for intros and ads
+- Automatic ducking: music lowers while people speak (local pipeline only)- Optional SponsorBlock skipping for intros and ads
 - Retries, voice-connection recovery, and unplayable tracks skipped instead of stalling the player
 
 **Queue and library**
@@ -75,8 +75,9 @@ manners.
 
 - 64-bit Linux, macOS, or Windows
 - [Bun](https://bun.sh) **≥ 1.4.0** (the lockfile pins `bun@1.4.0`)
-- **ffmpeg ≥ 4.1** on `PATH`
-- **yt-dlp** at `<project root>/bin/yt-dlp`, on `PATH`, or via `YT_DLP_PATH`
+- **ffmpeg ≥ 4.1** on `PATH` (used by the local fallback pipeline)
+- **yt-dlp** at `<project root>/bin/yt-dlp`, on `PATH`, or via `YT_DLP_PATH` (local fallback)
+- **Java 17+** and a **Lavalink node** (v4) when using the default Lavalink path
 - A **Neon PostgreSQL** project with a direct, non-pooled connection URL
 - A Discord bot token and a YouTube Data API v3 key
 
@@ -145,12 +146,12 @@ All configuration is read from environment variables, loaded from `.env` at star
 | `DATABASE_URL`                                | Yes      | –                   | Direct, non-pooled Neon connection string            |
 | `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | No       | –                   | Enables Spotify URLs and suggestions                 |
 | `DATA_DIR`                                    | No       | `./data`            | Audio cache and temporary files                      |
-| `CACHE_LIMIT`                                 | No       | `2GB`               | Disk budget for the audio cache (`512MB`, `10GB`, …) |
+| `CACHE_LIMIT`                                 | No       | `2GB`               | Disk budget for the audio cache (`512MB`, `10GB`, …); used by the local fallback path only |
 | `ENABLE_SPONSORBLOCK`                         | No       | `false`             | Skip SponsorBlock-tagged segments                    |
 | `SPONSORBLOCK_TIMEOUT`                        | No       | `5`                 | Minutes to back off when the API is unreachable      |
 | `YT_DLP_PATH`                                 | No       | `<root>/bin/yt-dlp` | Explicit yt-dlp executable path                      |
 | `YT_DLP_AUTO_UPDATE`                          | No       | `false`             | Update yt-dlp before connecting                      |
-| `YT_DLP_COOKIES_PATH`                         | No       | –                   | Netscape cookies file for age-restricted videos      |
+| `LAVALINK_NODES`                              | No       | –                   | Lavalink nodes (JSON list or `host:port:password` entries); unset = local pipeline || `YT_DLP_COOKIES_PATH`                         | No       | –                   | Netscape cookies file for age-restricted videos      |
 | `REGISTER_COMMANDS_ON_BOT`                    | No       | `false`             | Register slash commands globally                     |
 | `BOT_STATUS`                                  | No       | `online`            | `online`, `idle`, or `dnd`                           |
 | `BOT_ACTIVITY_TYPE`                           | No       | `LISTENING`         | `PLAYING`, `LISTENING`, `WATCHING`, or `STREAMING`   |
@@ -222,8 +223,7 @@ Everything is wired by hand in `src/compose.ts`, using explicit constructor inje
 container:
 
 > **Discord ⟷ `Bot` (interaction router)** ⟷ **commands** ⟷ **services** ⟷ **`PlayerManager`** ⟷
-> **per-guild `Player`s** ⟷ **`yt-dlp` → `ffmpeg` → `@discordjs/voice`** ⟷ **Discord voice**
-
+> **per-guild `Player`s** ⟷ **Lavalink (default) or `yt-dlp` → `ffmpeg` → `@discordjs/voice` (fallback)** ⟷ **Discord voice**
 <p align="center"><img src=".github/architecture.svg" alt="Architecture diagram of Fourier's components" /></p>
 
 When you run `/play`, Fourier resolves the query into songs, then streams each one through
@@ -387,5 +387,31 @@ MIT-licensed and retains its original copyright notice; see [LICENSE-MIT](LICENS
 
 ## Lavalink (preferred player)
 
-Set LAVALINK_NODES to use Lavalink via Shoukaku; leave unset/empty for the local yt-dlp + ffmpeg pipeline. If nodes are configured but none connect, the bot logs once and uses local. Per-guild fallback occurs on node failure, track exception or stuck. Voice ducking is local-only. Audio cache (FileCacheProvider) is skipped on the Lavalink path.
+Set `LAVALINK_NODES` to stream through a Lavalink node via Shoukaku. Leave it unset/empty to use the
+local `yt-dlp` + `ffmpeg` pipeline. Multiple nodes are supported (comma/semicolon or JSON list) and
+are used as fallbacks automatically.
+
+- Requirements: Java 17+ and a Lavalink v4 node. See `lavalink/application.yml` and
+  `docker-compose.yml`.
+- If nodes are configured but none connect at startup, the bot logs once and uses the local pipeline.
+- Per-guild fallback to local happens on node failure, track exception, or a stuck track, and lasts
+  60 seconds before Lavalink is retried.
+- Killing a node mid-track continues playback locally from the current position.
+- Voice ducking and the on-disk audio cache (`CACHE_LIMIT`) apply to the local pipeline only.
+- `/config get` shows the active path as `Playback path` (`lavalink` or `local (...)`).
+
+### Troubleshooting Lavalink
+
+**Lavalink not connecting.** Check the node host/port/password and that the node is reachable. The
+bot logs which nodes connected at startup. With no reachable node it falls back to local with a
+warning.
+
+**Why did it fall back?** `/config get` shows `local (fallback)` for 60 seconds after a node failure,
+track exception, or stuck track. The console logs the reason.
+
+**Seek/position drift.** Lavalink positions are interpolated from player updates plus the local clock;
+`/fseek` and the progress bar use `getPosition()`. Large drift usually means the node is overloaded.
+
+**Node restarts.** Shoukaku resumes sessions when possible; otherwise the guild falls back to local
+until the node is ready again.
 

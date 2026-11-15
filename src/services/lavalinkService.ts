@@ -87,14 +87,23 @@ export default class LavalinkService {
       },
     );
 
-    this.shoukaku.on('ready', () => {
+    this.shoukaku.on('ready', (name: string, resumed?: boolean, _resumedByLibrary?: boolean) => {
       this.available = true;
+      this.consecutiveFailures = 0;
       this.guildFallbackUntil.clear();
+      console.log(`[lavalink] node connected: ${name}${resumed ? ' (resumed)' : ''}`);
     });
-    this.shoukaku.on('disconnect', () => {
+    this.shoukaku.on('disconnect', (name?: string, count?: number) => {
+      console.warn(`[lavalink] node disconnected: ${name ?? 'unknown'} (count=${count ?? 0})`);
       if (this.shoukaku && [...this.shoukaku.nodes.values()].every((node) => !node.state)) {
         this.available = false;
       }
+    });
+    this.shoukaku.on('close', (name?: string, code?: number, reason?: string) => {
+      console.warn(`[lavalink] node closed: ${name ?? 'unknown'} code=${code ?? 0} reason=${reason ?? ''}`);
+    });
+    this.shoukaku.on('error', (name?: string, error?: Error) => {
+      console.error(`[lavalink] node error: ${name ?? 'unknown'}: ${error?.message ?? error}`);
     });
   }
 

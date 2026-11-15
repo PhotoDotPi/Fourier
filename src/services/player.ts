@@ -126,34 +126,60 @@ export default class Player extends EventEmitter implements PlaybackBackend {
           getCurrent: () => this.getCurrent(),
           getCurrentEntryId: () => this.getCurrentQueueEntryId(),
           onTrackStart: (song) => {
+            const oldStatus = this.status;
             this.nowPlaying = song;
             this.nowPlayingQueueEntryVersion = this.getCurrentQueueEntryId();
             this.status = STATUS.PLAYING;
+            this.positionBase = 0;
+            this.positionStartedAt = Date.now();
+            if (oldStatus !== STATUS.PLAYING) {
+              this.emit('statusChange' as PlayerEventName, oldStatus, this.status);
+            }
             this.emit('trackStart' as PlayerEventName, song);
           },
           onTrackEnd: (song, reason) => {
-            if (reason === 'finished') {
-              if (this.loopCurrentSong && song) {
-                void this.seek(0);
-                return;
-              }
-              if (this.loopCurrentQueue && song) {
-                this.add(song);
-              }
-              void this.advanceToNextTrack();
+            if (reason !== 'finished') {
+              return;
             }
+            if (this.loopCurrentSong && song) {
+              if (this.lavalinkBackend?.isConnected()) {
+                void this.play();
+              } else {
+                void this.seek(0);
+              }
+              return;
+            }
+            if (this.loopCurrentQueue && song) {
+              this.add(song);
+            }
+            void this.advanceToNextTrack();
           },
           onTrackException: (_song, error) => {
             this.lavalinkService?.markGuildFallback(this.guildId, error.message);
-            // fall back to local for this track
-            if (this.currentChannel) {
-              void this.fallbackToLocalMidTrack();
+            if (this.lavalinkBackend) {
+              this.lavalinkBackend.disconnect();
+              this.lavalinkBackend = null;
+            }
+            if (this.currentChannel && !this.voiceConnection) {
+              void this.connectLocal(this.currentChannel).then(() => {
+                void this.advancePastUnplayableTrack();
+              });
+            } else if (this.currentChannel) {
+              void this.advancePastUnplayableTrack();
             }
           },
           onTrackStuck: (_song, thresholdMs) => {
             this.lavalinkService?.markGuildFallback(this.guildId, `stuck ${thresholdMs}ms`);
-            if (this.currentChannel) {
-              void this.fallbackToLocalMidTrack();
+            if (this.lavalinkBackend) {
+              this.lavalinkBackend.disconnect();
+              this.lavalinkBackend = null;
+            }
+            if (this.currentChannel && !this.voiceConnection) {
+              void this.connectLocal(this.currentChannel).then(() => {
+                void this.advancePastUnplayableTrack();
+              });
+            } else if (this.currentChannel) {
+              void this.advancePastUnplayableTrack();
             }
           },
         });
@@ -324,15 +350,18 @@ export default class Player extends EventEmitter implements PlaybackBackend {
         }
         await this.lavalinkBackend.play();
         this.lavalinkService?.recordSuccess();
-        this.status = STATUS.PLAYING;
-        this.nowPlaying = this.getCurrent();
-        this.emit('trackStart' as PlayerEventName, this.nowPlaying!);
         return;
       } catch (error: unknown) {
         this.lavalinkService?.markGuildFallback(this.guildId, error instanceof Error ? error.message : 'play failed');
-        // Reconnect locally for fallback.
-        if (this.currentChannel && !this.voiceConnection) {
-          await this.connectLocal(this.currentChannel);
+        if (this.currentChannel) {
+          if (this.lavalinkBackend) {
+            await this.fallbackToLocalMidTrack();
+            return;
+          } else if (!this.voiceConnection) {
+            await this.connectLocal(this.currentChannel);
+          }
+        } else {
+          return;
         }
       }
     }
@@ -346,7 +375,6 @@ export default class Player extends EventEmitter implements PlaybackBackend {
       return;
     }
     const channel = this.currentChannel;
-    const song = this.getCurrent();
     const position = this.getPosition();
 
     if (this.lavalinkBackend) {
@@ -357,9 +385,6 @@ export default class Player extends EventEmitter implements PlaybackBackend {
     this.forceLocal = true;
     try {
       await this.connect(channel);
-      if (song) {
-        this.add(song);
-      }
       await this.play();
       if (position > 0) {
         await this.seek(position);
@@ -388,8 +413,12 @@ export default class Player extends EventEmitter implements PlaybackBackend {
 
   pause(): void {
     if (this.lavalinkBackend?.isConnected()) {
+      const oldStatus = this.status;
       this.lavalinkBackend.pause();
       this.status = STATUS.PAUSED;
+      if (oldStatus !== this.status) {
+        this.emit('statusChange' as PlayerEventName, oldStatus, this.status);
+      }
       return;
     }
 
@@ -411,8 +440,15 @@ export default class Player extends EventEmitter implements PlaybackBackend {
 
   resume(): void {
     if (this.lavalinkBackend?.isConnected()) {
+      const oldStatus = this.status;
       this.lavalinkBackend.resume();
       this.status = STATUS.PLAYING;
+      if (oldStatus !== this.status) {
+        this.emit('statusChange' as PlayerEventName, oldStatus, this.status);
+      }
+      if (this.nowPlaying) {
+        this.emit('trackStart' as PlayerEventName, this.nowPlaying);
+      }
       return;
     }
 
