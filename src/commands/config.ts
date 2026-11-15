@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { type ChatInputCommandInteraction, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import * as settingsRepo from '../db/repositories/settings.js';
+import type PlayerManager from '../managers/player.js';
 import { buildSuccessEmbed } from '../ui/embeds.js';
 import { getGuildSettings } from '../utils/getGuildSettings.js';
 import type Command from './index.js';
@@ -84,6 +85,8 @@ const INTEGER_SUBCOMMANDS: Record<string, IntegerSubcommand> = {
 };
 
 export default class Config implements Command {
+  constructor(private readonly playerManager?: PlayerManager) {}
+
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('config')
     .setDescription('configure bot settings')
@@ -253,7 +256,7 @@ export default class Config implements Command {
   private async showSettings(interaction: ChatInputCommandInteraction): Promise<void> {
     const config = await getGuildSettings(interaction.guild!.id);
 
-    const settingsToShow = {
+    const settingsToShow: Record<string, unknown> = {
       'Playlist Limit': config.playlistLimit,
       'Wait before leaving after queue empty':
         config.secondsToWaitAfterQueueEmpties === 0 ? 'never leave' : `${config.secondsToWaitAfterQueueEmpties}s`,
@@ -265,6 +268,11 @@ export default class Config implements Command {
       'Reduce volume when people speak': config.turnDownVolumeWhenPeopleSpeak ? 'yes' : 'no',
       'Reduce volume when people speak target': config.turnDownVolumeWhenPeopleSpeakTarget,
     };
+
+    if (this.playerManager) {
+      const player = this.playerManager.get(interaction.guild!.id);
+      settingsToShow['Playback path'] = player.getActivePlaybackPath();
+    }
 
     let description = '';
     for (const [key, value] of Object.entries(settingsToShow)) {

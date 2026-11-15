@@ -154,6 +154,12 @@ export default class AddQueryToQueue {
       shuffleAdditions,
     );
 
+    if (typeof (player as { prepareSongsForBackend?: unknown }).prepareSongsForBackend === 'function') {
+      await (player as { prepareSongsForBackend: (songs: SongMetadata[]) => Promise<void> }).prepareSongsForBackend(
+        newSongs,
+      );
+    }
+
     this.addSongsToPlayer(player, newSongs, interaction, addToFrontOfQueue);
 
     const { statusMsg, shouldShowPlayingEmbed } = await this.startPlayback(player, targetVoiceChannel, wasPlayingSong);

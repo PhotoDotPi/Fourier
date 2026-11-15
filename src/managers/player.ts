@@ -1,4 +1,5 @@
 import type FileCacheProvider from '../services/fileCache.js';
+import type LavalinkService from '../services/lavalinkService.js';
 import Player from '../services/player.js';
 import { STATUS } from '../services/playerTypes.js';
 import type YoutubeAPI from '../services/youtubeApi.js';
@@ -10,14 +11,16 @@ export default class PlayerManager {
   private readonly guildPlayers: Map<string, Player>;
   private readonly fileCache: FileCacheProvider;
   private readonly youtubeAPI: YoutubeAPI;
+  private readonly lavalinkService?: LavalinkService;
   private readonly lastActiveTimes: Map<string, number>;
   private readonly playerCreateListeners: Array<(player: Player) => void>;
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(fileCache: FileCacheProvider, youtubeAPI: YoutubeAPI) {
+  constructor(fileCache: FileCacheProvider, youtubeAPI: YoutubeAPI, lavalinkService?: LavalinkService) {
     this.guildPlayers = new Map();
     this.fileCache = fileCache;
     this.youtubeAPI = youtubeAPI;
+    this.lavalinkService = lavalinkService;
     this.lastActiveTimes = new Map();
     this.playerCreateListeners = [];
     this.startCleanupTimer();
@@ -31,7 +34,12 @@ export default class PlayerManager {
     let player = this.guildPlayers.get(guildId);
 
     if (!player) {
-      player = new Player(this.fileCache, guildId, async (song) => this.youtubeAPI.findAudioFallback(song));
+      player = new Player(
+        this.fileCache,
+        guildId,
+        async (song) => this.youtubeAPI.findAudioFallback(song),
+        this.lavalinkService,
+      );
 
       this.guildPlayers.set(guildId, player);
       if (this.cleanupTimer === null) {
