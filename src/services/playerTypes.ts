@@ -20,6 +20,8 @@ export interface SongMetadata {
   isLive: boolean;
   thumbnailUrl: string | null;
   source: MediaSource;
+  // Backend payload slot: encoded track for Lavalink, url+source for local.
+  encodedTrack?: string | null;
 }
 
 export interface QueuedSong extends SongMetadata {
