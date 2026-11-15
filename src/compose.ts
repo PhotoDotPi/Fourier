@@ -31,6 +31,7 @@ import FileCacheProvider from './services/fileCache.js';
 import GetSongs from './services/getSongs.js';
 import ItunesSearchService from './services/itunesSearch.js';
 import KeyValueCacheProvider from './services/keyValueCache.js';
+import LavalinkService from './services/lavalinkService.js';
 import MusicCardService from './services/musicCard.js';
 import NowPlayingPresenter from './services/nowPlayingPresenter.js';
 import PlayerIntegrations from './services/playerIntegrations.js';
@@ -48,6 +49,7 @@ export interface AppDependencies {
   fileCache: FileCacheProvider;
   playerPanelManager: PlayerPanelManager;
   playerIntegrations: PlayerIntegrations;
+  lavalinkService: LavalinkService;
 }
 
 export function createApp(): AppDependencies {
@@ -65,6 +67,8 @@ export function createApp(): AppDependencies {
 
   const youtubeAPI = new YoutubeAPI(config, keyValueCache);
 
+  const lavalinkService = new LavalinkService(config, client);
+
   let spotifyAPI: SpotifyAPI | undefined;
   let thirdParty: ThirdParty | undefined;
   if (config.SPOTIFY_CLIENT_ID !== '' && config.SPOTIFY_CLIENT_SECRET !== '') {
@@ -73,7 +77,7 @@ export function createApp(): AppDependencies {
   }
 
   const getSongs = new GetSongs(youtubeAPI, spotifyAPI);
-  const playerManager = new PlayerManager(fileCache, youtubeAPI);
+  const playerManager = new PlayerManager(fileCache, youtubeAPI, lavalinkService);
   const itunesSearch = new ItunesSearchService();
   const musicCard = new MusicCardService();
   const presenter = new NowPlayingPresenter(musicCard, itunesSearch);
@@ -83,7 +87,7 @@ export function createApp(): AppDependencies {
 
   const commands: Command[] = [
     new Clear(playerManager),
-    new ConfigCommand(),
+    new ConfigCommand(playerManager),
     new Disconnect(playerManager),
     new Favorites(addQueryToQueue),
     new ForwardSeek(playerManager),
@@ -109,5 +113,15 @@ export function createApp(): AppDependencies {
 
   const bot = new Bot(client, config);
 
-  return { config, client, bot, playerManager, commands, fileCache, playerPanelManager, playerIntegrations };
+  return {
+    config,
+    client,
+    bot,
+    playerManager,
+    commands,
+    fileCache,
+    playerPanelManager,
+    playerIntegrations,
+    lavalinkService,
+  };
 }

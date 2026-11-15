@@ -22,6 +22,7 @@ import { getGuildSettings } from '../utils/getGuildSettings.js';
 import { getYouTubeMediaSource, YtDlpMediaUnavailableError } from '../utils/ytDlp.js';
 import { FfmpegMediaUnavailableError, FfmpegStartupError } from './ffmpegProcess.js';
 import type FileCacheProvider from './fileCache.js';
+import type LavalinkService from './lavalinkService.js';
 import type { PlaybackAttemptToken } from './playbackAttempt.js';
 import { type PlaybackAttemptContext, PlaybackAttemptTracker } from './playbackAttempt.js';
 import type { PlaybackBackend, PlaybackBackendKind } from './playbackBackend.js';
@@ -84,6 +85,8 @@ export default class Player extends EventEmitter implements PlaybackBackend {
   private positionBase = 0;
   private readonly fileCache: FileCacheProvider;
   private readonly ageRestrictedFallbackResolver?: AgeRestrictedFallbackResolver;
+  private readonly lavalinkService?: LavalinkService;
+  private lavalinkBackend: import('./lavalinkBackend.js').default | null = null;
   private disconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly channelToSpeakingUsers: Map<string, Set<string>> = new Map();
@@ -96,11 +99,13 @@ export default class Player extends EventEmitter implements PlaybackBackend {
     fileCache: FileCacheProvider,
     guildId: string,
     ageRestrictedFallbackResolver?: AgeRestrictedFallbackResolver,
+    lavalinkService?: LavalinkService,
   ) {
     super();
     this.fileCache = fileCache;
     this.guildId = guildId;
     this.ageRestrictedFallbackResolver = ageRestrictedFallbackResolver;
+    this.lavalinkService = lavalinkService;
     this.playbackAttempts = new PlaybackAttemptTracker(() => ({
       currentSong: this.getCurrent(),
       queueEntryVersion: this.getCurrentQueueEntryId(),
@@ -109,8 +114,24 @@ export default class Player extends EventEmitter implements PlaybackBackend {
   }
 
   async connect(channel: VoiceChannel): Promise<void> {
-    if (this.voiceConnection) {
+    if (this.voiceConnection || this.lavalinkBackend?.isConnected()) {
       this.disconnect();
+    }
+
+    if (this.shouldUseLavalink()) {
+      if (!this.lavalinkBackend) {
+        this.lavalinkBackend = new (await import('./lavalinkBackend.js')).default({
+          guildId: this.guildId,
+          service: this.lavalinkService!,
+          getCurrent: () => this.getCurrent(),
+          getCurrentEntryId: () => this.getCurrentQueueEntryId(),
+        });
+      }
+
+      await this.lavalinkBackend.connect(channel);
+      this.currentChannel = channel;
+      this.emit('connect' as PlayerEventName);
+      return;
     }
 
     const settings = await getGuildSettings(this.guildId);
@@ -175,11 +196,15 @@ export default class Player extends EventEmitter implements PlaybackBackend {
   }
 
   getChannel(): VoiceChannel | undefined {
-    return this.currentChannel;
+    return this.lavalinkBackend?.getChannel() ?? this.currentChannel;
   }
 
   isConnected(): boolean {
-    return this.voiceConnection !== null;
+    return this.voiceConnection !== null || (this.lavalinkBackend?.isConnected() ?? false);
+  }
+
+  getActivePlaybackPath(): string {
+    return this.lavalinkService?.getActivePathLabel(this.guildId) ?? 'local';
   }
 
   getSpeakingUserIds(): string[] {
@@ -193,6 +218,14 @@ export default class Player extends EventEmitter implements PlaybackBackend {
   disconnect(): void {
     this.playbackAttempts.invalidate();
     this.voiceActivitySessionGeneration++;
+
+    if (this.lavalinkBackend?.isConnected()) {
+      this.lavalinkBackend.disconnect();
+      this.lavalinkBackend = null;
+      this.currentChannel = undefined;
+      this.emit('disconnect' as PlayerEventName);
+      return;
+    }
 
     if (this.voiceConnection) {
       if (this.status === STATUS.PLAYING) {
@@ -216,6 +249,11 @@ export default class Player extends EventEmitter implements PlaybackBackend {
   }
 
   async seek(positionSeconds: number): Promise<void> {
+    if (this.lavalinkBackend?.isConnected()) {
+      await this.lavalinkBackend.seek(positionSeconds);
+      return;
+    }
+
     const attempt = this.playbackAttempts.begin();
     await this.seekWithAttempt(positionSeconds, attempt);
   }
@@ -225,6 +263,10 @@ export default class Player extends EventEmitter implements PlaybackBackend {
   }
 
   getPosition(): number {
+    if (this.lavalinkBackend?.isConnected() && this.status === STATUS.PLAYING) {
+      return this.lavalinkBackend.getPosition();
+    }
+
     if (this.status === STATUS.PLAYING) {
       return this.positionBase + Math.floor((Date.now() - this.positionStartedAt) / 1000);
     }
@@ -233,11 +275,55 @@ export default class Player extends EventEmitter implements PlaybackBackend {
   }
 
   async play(allowAgeRestrictedFallback = true): Promise<void> {
+    if (this.shouldUseLavalink()) {
+      if (!this.lavalinkBackend?.isConnected() && this.currentChannel) {
+        await this.connect(this.currentChannel);
+      }
+
+      try {
+        if (!this.lavalinkBackend) {
+          throw new Error('Lavalink backend unavailable');
+        }
+        await this.lavalinkBackend.play();
+        this.lavalinkService?.lavalinkPlayCount && void 0;
+        return;
+      } catch (error: unknown) {
+        this.lavalinkService?.markGuildFallback(this.guildId, error instanceof Error ? error.message : 'play failed');
+        // Reconnect locally for fallback.
+        if (this.currentChannel && !this.voiceConnection) {
+          await this.connectLocal(this.currentChannel);
+        }
+      }
+    }
+
     const attempt = this.playbackAttempts.begin();
     await this.playWithAttempt(attempt, allowAgeRestrictedFallback);
   }
 
+  private forceLocal = false;
+  private shouldUseLavalink(): boolean {
+    if (this.forceLocal) {
+      return false;
+    }
+    return this.lavalinkService?.shouldUseLavalink(this.guildId) ?? false;
+  }
+
+  private async connectLocal(channel: VoiceChannel): Promise<void> {
+    this.forceLocal = true;
+    try {
+      await this.connect(channel);
+    } finally {
+      this.forceLocal = false;
+    }
+  }
+
   pause(): void {
+    if (this.lavalinkBackend?.isConnected()) {
+      this.lavalinkBackend.pause();
+      this.status = STATUS.PAUSED;
+      return;
+    }
+
     if (this.status !== STATUS.PLAYING) {
       throw new Error('Not currently playing.');
     }
@@ -255,6 +341,12 @@ export default class Player extends EventEmitter implements PlaybackBackend {
   }
 
   resume(): void {
+    if (this.lavalinkBackend?.isConnected()) {
+      this.lavalinkBackend.resume();
+      this.status = STATUS.PLAYING;
+      return;
+    }
+
     if (this.status !== STATUS.PAUSED) {
       return;
     }
@@ -459,6 +551,9 @@ export default class Player extends EventEmitter implements PlaybackBackend {
   }
 
   stop(): void {
+    if (this.lavalinkBackend?.isConnected()) {
+      this.lavalinkBackend.stop();
+    }
     this.disconnect();
     this.queue.reset();
   }
@@ -470,6 +565,13 @@ export default class Player extends EventEmitter implements PlaybackBackend {
   }
 
   setVolume(level: number): void {
+    if (this.lavalinkBackend?.isConnected()) {
+      this.lavalinkBackend.setVolume(level);
+      this.volume = level;
+      this.emit('volumeChange' as PlayerEventName, this.getVolume());
+      return;
+    }
+
     this.volume = level;
 
     if (this.volumeBeforeVoiceActivity === undefined) {

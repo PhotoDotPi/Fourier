@@ -15,6 +15,17 @@ const startBot = async () => {
   await app.fileCache.cleanup();
   await prepareYtDlp(app.config);
 
+  if (app.lavalinkService?.isEnabled()) {
+    const ready = await app.lavalinkService.connect();
+    if (!ready) {
+      console.warn('Lavalink nodes configured but none connected; using local pipeline.');
+    } else {
+      console.log('Lavalink connected; using Lavalink as default player.');
+    }
+  } else {
+    console.log('Lavalink not configured; using local pipeline.');
+  }
+
   const onGuildCreate = handleGuildCreate(app.config, app.client, app.commands);
   const onVoiceStateUpdate = handleVoiceStateUpdate(app.playerManager);
   const onReady = () => app.playerPanelManager.init();

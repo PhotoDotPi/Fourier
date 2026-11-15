@@ -76,6 +76,7 @@ const CONFIG_MAP = {
     firstNonEmpty(process.env.YT_DLP_PATH, process.env.FOURIER_BUNDLED_YT_DLP_PATH) ??
     path.join(process.cwd(), 'bin', 'yt-dlp'),
   YT_DLP_AUTO_UPDATE: process.env.YT_DLP_AUTO_UPDATE === 'true',
+  LAVALINK_NODES: firstNonEmpty(process.env.LAVALINK_NODES) ?? '',
 } as const;
 
 const BOT_ACTIVITY_TYPE_MAP = {
@@ -139,6 +140,7 @@ export default class Config {
   readonly SPONSORBLOCK_TIMEOUT!: number;
   readonly YT_DLP_PATH!: string;
   readonly YT_DLP_AUTO_UPDATE!: boolean;
+  readonly LAVALINK_NODES!: string;
 
   constructor() {
     const config = this as unknown as Record<string, unknown>;
