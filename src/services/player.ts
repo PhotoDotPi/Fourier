@@ -344,6 +344,19 @@ export default class Player extends EventEmitter implements PlaybackBackend {
         await this.connect(this.currentChannel);
       }
 
+      if (this.status === STATUS.PAUSED && this.lavalinkBackend?.isConnected()) {
+        const oldStatus = this.status as STATUS;
+        this.lavalinkBackend.resume();
+        this.status = STATUS.PLAYING;
+        if (oldStatus !== this.status) {
+          this.emit('statusChange' as PlayerEventName, oldStatus, this.status);
+        }
+        if (this.nowPlaying) {
+          this.emit('trackStart' as PlayerEventName, this.nowPlaying);
+        }
+        return;
+      }
+
       try {
         if (!this.lavalinkBackend) {
           throw new Error('Lavalink backend unavailable');
