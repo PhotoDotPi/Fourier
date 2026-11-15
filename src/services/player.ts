@@ -24,6 +24,7 @@ import { FfmpegMediaUnavailableError, FfmpegStartupError } from './ffmpegProcess
 import type FileCacheProvider from './fileCache.js';
 import type { PlaybackAttemptToken } from './playbackAttempt.js';
 import { type PlaybackAttemptContext, PlaybackAttemptTracker } from './playbackAttempt.js';
+import type { PlaybackBackend, PlaybackBackendKind } from './playbackBackend.js';
 import {
   type AgeRestrictedFallbackResolver,
   DEFAULT_VOLUME,
@@ -53,7 +54,15 @@ const getMediaIdentifierForLog = (song: QueuedSong) =>
     ? `youtube=${song.url}`
     : `sourceHash=${sha256(song.url).slice(0, 16)}`;
 
-export default class extends EventEmitter {
+/**
+ * Queue owner and local playback engine.
+ *
+ * The queue, loop mode and seek/position bookkeeping always live here. Local
+ * playback (yt-dlp + ffmpeg + @discordjs/voice) is the built-in implementation
+ * of {@link PlaybackBackend}; callers may swap in a different backend later.
+ */
+export default class Player extends EventEmitter implements PlaybackBackend {
+  public readonly kind: PlaybackBackendKind = 'local';
   public voiceConnection: VoiceConnection | null = null;
   public status = STATUS.PAUSED;
   public guildId: string;
@@ -169,6 +178,10 @@ export default class extends EventEmitter {
     return this.currentChannel;
   }
 
+  isConnected(): boolean {
+    return this.voiceConnection !== null;
+  }
+
   getSpeakingUserIds(): string[] {
     if (!this.currentChannel) {
       return [];
@@ -239,6 +252,31 @@ export default class extends EventEmitter {
     }
 
     this.emit('statusChange' as PlayerEventName, oldStatus, this.status);
+  }
+
+  resume(): void {
+    if (this.status !== STATUS.PAUSED) {
+      return;
+    }
+
+    if (this.audioPlayer) {
+      this.audioPlayer.unpause();
+      this.positionBase = this.positionInSeconds;
+      this.positionStartedAt = Date.now();
+      const oldStatus = this.status;
+      this.status = STATUS.PLAYING;
+      this.emit('statusChange' as PlayerEventName, oldStatus, this.status);
+      if (this.nowPlaying) {
+        this.emit('trackStart' as PlayerEventName, this.nowPlaying);
+      }
+      return;
+    }
+
+    void this.play();
+  }
+
+  getStatus(): number {
+    return this.status;
   }
 
   async forward(skip: number): Promise<void> {
@@ -1140,3 +1178,6 @@ export default class extends EventEmitter {
     }
   }
 }
+
+/** Alias kept for callers that want to be explicit about the local pipeline. */
+export { Player as LocalBackend };
